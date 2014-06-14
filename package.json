@@ -1,0 +1,27 @@
+{
+  "name": "schema2js",
+  "version": "0.0.0",
+  "description": "Generate JavaScript classes from JSON Schemas",
+  "main": "index.js",
+  "scripts": {
+    "test": "grunt test"
+  },
+  "keywords": [
+    "json-schema",
+    "code-generation",
+    "tv4",
+    "json",
+    "schema"
+  ],
+  "author": "Geraint Luff",
+  "license": "MIT",
+  "dependencies": {
+    "tv4": "~1.0.18"
+  },
+  "devDependencies": {
+    "chai": "~1.9.1",
+    "grunt": "~0.4.1",
+    "grunt-mocha-test": "~0.7.0",
+    "mocha-unfunk-reporter": "~0.4.0"
+  }
+}
