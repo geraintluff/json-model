@@ -42,24 +42,54 @@
 		code: function () {
 			var code = '';
 			code += 'superclass = superclass || function GeneratedClass() {};\n';
-			code += 'var classes = {};\n\n';
-			for (var url in this.classNames) {
-				code += this.codeForSchema(url);
+			code += 'var classes = {};\n';
+			var urls = Object.keys(this.classNames);
+			var appendUrl = function (url) {
+				if (urls.indexOf(url) === -1) {
+					urls.push(url);
+				}
+			};
+			for (var i = 0; i < urls.length; i++) {
+				var url = urls[i];
+				code += '\n' + this.codeForUrl(url, appendUrl);
 			}
 			code += '\nreturn classes;\n';
 			code = 'function (superclass) {\n' + indent(code) + '}';
 			return code;
 		},
-		nameForSchema: function (url) {
+		nameForUrl: function (url) {
 			return this.classNames[url] = this.classNames[url] || url;
 		},
-		codeForSchema: function (url) {
-			var schema = this.tv4.getSchema(url);
+		extendUrl: function (url, components) {
+			if (url.indexOf('#') === -1) url += '#';
+			components.forEach(function (key) {
+				url += '/' + encodeURIComponent(key.replace(/~/g, '~0').replace(/\//g, '~1'));
+			});
+			return url;
+		},
+		canCodeForSchema: function (schema) {
 			if (!schema.type || !(schema.type === 'object' || (schema.type.length == 1 && schema.type[0] === 'object'))) {
+				return false;
+			}
+			return true;
+		},
+		getFullSchema: function (schema, haltUrls) {
+			if (!schema || typeof schema['$ref'] !== 'string') return schema;
+			haltUrls = haltUrls || {};
+			var refUrl = schema['$ref'];
+			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
+			haltUrls[refUrl] = true;
+			var schema = this.tv4.getSchema(refUrl);
+			if (!schema.id) schema.id = normUrl(refUrl);
+			return this.getFullSchema(schema, haltUrls);
+		},
+		codeForUrl: function (url, requireUrl) {
+			var schema = this.getFullSchema(this.tv4.getSchema(url));
+			if (!this.canCodeForSchema(schema)) {
 				throw new Error('Cannot generate class for non-object schema');
 			}
 			
-			var name = this.nameForSchema(url);
+			var name = this.nameForUrl(url);
 			var classExpression = 'classes[' + JSON.stringify(name) + ']';
 			
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
@@ -75,9 +105,19 @@
 			body += '}.bind(this));\n';
 			
 			for (var key in schema.properties || {}) {
-				var subSchema = schema.properties[key];
+				var subSchema = this.getFullSchema(schema.properties[key]);
 				if ('default' in subSchema) {
-					body += 'if (typeof this[' + JSON.stringify(key) + '] === "undefined") this[' + JSON.stringify(key) + '] = ' + JSON.stringify(subSchema['default']) + ';\n';
+					body += 'if (typeof this[' + JSON.stringify(key) + '] === "undefined") {\n';
+					body += indent('this[' + JSON.stringify(key) + '] = ' + JSON.stringify(subSchema['default']) + ';\n');
+					body += '}\n';
+				}
+				if (this.canCodeForSchema(subSchema)) {
+					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
+					var subName = this.nameForUrl(subUrl);
+					requireUrl(subUrl);
+					body += 'if (this[' + JSON.stringify(key) + ']) {\n';
+					body += indent('this[' + JSON.stringify(key) + '] = new classes[' + JSON.stringify(subName) + '](this[' + JSON.stringify(key) + ']);\n');
+					body += '}\n';
 				}
 			}
 			
@@ -85,7 +125,7 @@
 			code += indent(body);
 			code += '}\n';
 			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
-			code += classExpression + '.schemaUrl = ' + JSON.stringify(url);
+			code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
 			return code;
 		},
 		classes: function (superclass) {
