@@ -21,6 +21,18 @@ describe('Basic shape', function () {
 		assert.deepEqual(Demo.title, 'Demo schema');
 		assert.deepEqual(Demo.description, 'A simple schema to test the library');
 	});
+	
+	it('follows inheritance', function () {
+		var schema = {
+			"type": "object"
+		};
+		
+		function SuperClass() {};
+		
+		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes(SuperClass);
+		var Demo = classes.Demo;
+		assert.instanceOf(Demo.prototype, SuperClass);
+	});
 
 	it('lists missing references', function () {
 		var schema = {

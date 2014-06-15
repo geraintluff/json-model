@@ -49,7 +49,10 @@
 		},
 		code: function () {
 			var code = '';
-			code += 'superclass = superclass || function GeneratedClass() {};\n';
+			code += 'if (typeof superclass !== "function") {\n';
+			code += indent('request = superclass\n');
+			code += indent('superclass = function GeneratedClass() {};\n');
+			code += '}\n';
 			code += 'var classes = {};\n';
 			var urls = Object.keys(this.classNames);
 			var appendUrl = function (url) {
@@ -132,7 +135,6 @@
 			body += 'superclass.apply(this, arguments);\n';
 			code += indent(body);
 			code += '}\n';
-			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
 			code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
 			if (schema.title) {
 				code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
@@ -140,12 +142,28 @@
 			if (schema.description) {
 				code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
 			}
+			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
+			(schema.links || []).forEach(function (ldo) {
+				var template = ldo.href;
+				var rel = ldo.rel;
+				var prettyRel = rel.replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
+					return nextChar.toUpperCase();
+				});
+				var method = ldo.method || 'GET';
+				
+				var body = '/* :)  */';
+				
+				var methodName = method.toLowerCase() + prettyRel.charAt(0).toUpperCase() + prettyRel.substring(1);
+				code += classExpression + '.prototype[' + JSON.stringify(methodName) + '] = function (params) {\n';
+				code += indent(body);
+				code += '}\n';
+			});
 			return code;
 		},
-		classes: function (superclass) {
+		classes: function (superclass, request) {
 			var code = this.code();
-			var func = new Function('superclass', 'return ' + code + '(superclass)');
-			return func(superclass);
+			var func = new Function('superclass', 'request', 'return ' + code + '(superclass, request)');
+			return func(superclass, request);
 		}
 	};
 	
