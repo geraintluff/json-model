@@ -4,6 +4,8 @@ var assert = require('chai').assert;
 describe('Basic shape', function () {
 	it('produces class', function () {
 		var schema = {
+			"title": "Demo schema",
+			"description": "A simple schema to test the library",
 			"type": "object",
 			"properties": {
 				"foo": {"type": "integer"},
@@ -16,8 +18,26 @@ describe('Basic shape', function () {
 
 		assert.isFunction(Demo);
 		assert.deepEqual(Demo.schemaUrl, '/demo');
+		assert.deepEqual(Demo.title, 'Demo schema');
+		assert.deepEqual(Demo.description, 'A simple schema to test the library');
 	});
 
+	it('lists missing references', function () {
+		var schema = {
+			"title": "Demo schema",
+			"description": "A simple schema to test the library",
+			"type": "object",
+			"properties": {
+				"foo": {"type": "integer"},
+				"bar": {"$ref": "/schemas/bar"}
+			}
+		};
+		
+		var generator = api.Generator().addSchema('/demo', schema, 'Demo');
+		var missing = generator.missingSchemas();
+		assert.deepEqual(missing, ['/schemas/bar'])
+	});
+	
 	it('assigns properties', function () {
 		var schema = {
 			"type": "object",

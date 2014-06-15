@@ -2,7 +2,7 @@ var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Interlinking', function () {
-	it('produces reference', function () {
+	it('produces class for property', function () {
 		var schema = {
 			"type": "object",
 			"properties": {
@@ -38,9 +38,6 @@ describe('Interlinking', function () {
 				}
 			}
 		};
-		
-		var code = api.Generator().addSchema('/demo', schema, 'Demo').code();
-		console.log(code);
 		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
 		var Demo = classes.Demo;

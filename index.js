@@ -32,12 +32,20 @@
 			if (typeof url === 'object') {
 				name = schema;
 				schema = url;
-				url = schema.id;
+				url = schema && schema.id;
+			}
+			if (typeof schema === 'object') {
+				this.tv4.addSchema(url, schema);
+			} else if (!name) {
+				name = schema;
+				schema = {};
 			}
 			url = normUrl(url || '');
-			this.tv4.addSchema(url, schema);
 			this.classNames[url] = name || url;
 			return this;
+		},
+		missingSchemas: function () {
+			return this.tv4.getMissingUris();
 		},
 		code: function () {
 			var code = '';
@@ -126,6 +134,12 @@
 			code += '}\n';
 			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
 			code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
+			if (schema.title) {
+				code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
+			}
+			if (schema.description) {
+				code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
+			}
 			return code;
 		},
 		classes: function (superclass) {
