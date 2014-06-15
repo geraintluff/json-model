@@ -20,6 +20,45 @@
 		return url;
 	}
 	
+	function uriTemplatePart(subject, spec) {
+		var prefix = spec.match(/^[+]*/)[0];
+		var suffix = spec.match(/[*]*$/)[0];
+		var vars = spec.substring(prefix.length).split(',');
+
+		var codeParts = [];
+		vars.forEach(function (varSpec) {
+			var code = subject(varSpec);
+			if (prefix.indexOf('+') === -1) code = 'encodeURIComponent(' + code + ')';
+			codeParts.push(code);
+		});
+		return codeParts.join(' + ');
+	}
+	
+	var uriTemplate = api.uriTemplate = function uriTemplate(subject, template) {
+		if (typeof subject !== 'function') {
+			var subjectVar = subject;
+			subject = function (property) {
+				return subjectVar + '[' + JSON.stringify(property) + ']';
+			};
+		}
+		
+		var codeParts = [];
+		
+		var parts = template.split('{');
+		var firstConstant = parts.shift();
+		if (firstConstant) codeParts.push(JSON.stringify(firstConstant));
+		while (parts.length) {
+			var part = parts.shift();
+			var spec = part.split('}')[0];
+			codeParts.push(uriTemplatePart(subject, spec));
+			var remainder = part.substring(spec.length + 1);
+			if (remainder) codeParts.push(JSON.stringify(remainder));
+		}
+		
+		if (!codeParts.length) codeParts.push('""');
+		return codeParts.join(' + ');
+	};
+	
 	var schemaCounter = 0;
 	var Generator = api.Generator = function Generator(tv4Instance) {
 		if (!(this instanceof Generator)) return new Generator(tv4Instance);
@@ -49,10 +88,8 @@
 		},
 		code: function () {
 			var code = '';
-			code += 'if (typeof superclass !== "function") {\n';
-			code += indent('request = superclass\n');
-			code += indent('superclass = function GeneratedClass() {};\n');
-			code += '}\n';
+			code += 'superclass = superclass || function GeneratedClass() {};\n';
+			code += 'request = request || function () {throw new Error("No web-request function provided");};\n';
 			code += 'var classes = {};\n';
 			var urls = Object.keys(this.classNames);
 			var appendUrl = function (url) {
@@ -144,17 +181,28 @@
 			}
 			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
 			(schema.links || []).forEach(function (ldo) {
-				var template = ldo.href;
 				var rel = ldo.rel;
 				var prettyRel = rel.replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
 					return nextChar.toUpperCase();
 				});
 				var method = ldo.method || 'GET';
+				var encType = ldo.encType || ldo.enctype || 'application/json';
 				
-				var body = '/* :)  */';
+				var body = '';
+				body += 'if (typeof params === "function") {\n';
+				body += indent('callback = params;\n');
+				body += indent('params = null;\n');
+				body += '}\n';
+				body += 'var href = ' + api.uriTemplate('this', ldo.href) + ';\n';
+				body += 'request({\n';
+				body += indent('href: href,\n');
+				body += indent('method: ' + JSON.stringify(method) + ',\n');
+				body += indent('encType: ' + JSON.stringify(encType) + ',\n');
+				body += indent('data: null\n');
+				body += '}, callback || function () {});';
 				
 				var methodName = method.toLowerCase() + prettyRel.charAt(0).toUpperCase() + prettyRel.substring(1);
-				code += classExpression + '.prototype[' + JSON.stringify(methodName) + '] = function (params) {\n';
+				code += classExpression + '.prototype[' + JSON.stringify(methodName) + '] = function (params, callback) {\n';
 				code += indent(body);
 				code += '}\n';
 			});
