@@ -7,7 +7,7 @@
 		module.exports = factory(require('tv4'));
 	} else {
 		// Browser globals
-		global.schema2js = factory(tv4);
+		global.schema2js = factory(global.tv4);
 	}
 }(this, function (tv4) {
 	var api = {};
@@ -204,6 +204,7 @@
 				schema = url;
 				url = schema && schema.id;
 			}
+			url = url || (Math.random().toString().substring(2) + 'anonymous');
 			if (typeof schema === 'object') {
 				this.tv4.addSchema(url, schema);
 			} else if (!name) {
@@ -211,8 +212,8 @@
 				schema = {};
 			}
 			url = normUrl(url || '');
-			this.classNames[url] = name || url;
-			this.classVarForUrl(url); // reserves the name
+			this.classNames[url] = name;
+			this.classVarForUrl(url); // reserves an appropriate variable name
 			return this;
 		},
 		missingSchemas: function () {
@@ -237,27 +238,28 @@
 			code = 'function (superclass) {\n' + indent(code) + '}';
 			return code;
 		},
-		classVarForUrl: function (url) {
+		classVarForUrl: function (url, suffix) {
+			if (typeof suffix !== 'string') suffix = 'Class';
 			var varName = this.classNames[url] || url;
 			varName = varName.replace(/[^a-zA-Z0-9]*$/, '').replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
 				return nextChar.toUpperCase();
 			});
-			varName = varName.replace(/^[^a-zA-Z]*/, ''); // strip leading zeros
+			varName = varName.replace(/^[^a-zA-Z]*/, '') || 'anonymous'; // strip leading zeros
 			varName = varName.charAt(0).toUpperCase() + varName.substring(1);
 			
-			if (!this.classVars[varName + 'Class'] || this.classVars[varName + 'Class'] === url) {
-				this.classVars[varName + 'Class'] = url;
-				return varName;
+			if (!this.classVars[varName + suffix] || this.classVars[varName + suffix] === url) {
+				this.classVars[varName + suffix] = url;
+				return varName + suffix;
 			}
 			var counter = 2;
-			while (this.classVars[varName + counter + 'Class'] && this.classVars[varName + counter + 'Class'] !== url) {
+			while (this.classVars[varName + counter + suffix] && this.classVars[varName + counter + suffix] !== url) {
 				counter++;
 			}
-			this.classVars[varName + counter + 'Class'] = url;
-			return varName + counter + 'Class';
+			this.classVars[varName + counter + suffix] = url;
+			return varName + counter + suffix;
 		},
 		classNameForUrl: function (url) {
-			return this.classNames[url] = this.classNames[url] || this.classVarForUrl(url);
+			return this.classNames[url] = this.classNames[url] || this.classVarForUrl(url, '');
 		},
 		extendUrl: function (url, components) {
 			if (url.indexOf('#') === -1) url += '#';

@@ -40,8 +40,6 @@ describe('Basic hypermedia', function () {
 			requestParams.push(params);
 		};
 		
-		console.log(api.Generator().addSchema('/demo', schema, 'Demo').addSchema('/other/demo', schema).code());
-		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes(null, request);
 	
 		var demo = new classes.Demo({

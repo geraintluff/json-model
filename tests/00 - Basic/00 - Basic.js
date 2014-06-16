@@ -21,6 +21,21 @@ describe('Basic shape', function () {
 		assert.deepEqual(Demo.title, 'Demo schema');
 		assert.deepEqual(Demo.description, 'A simple schema to test the library');
 	});
+
+	it('produces "Anonymous" without URL', function () {
+		var schema = {
+			"title": "Demo schema",
+			"description": "A simple schema to test the library",
+			"type": "object",
+			"properties": {
+				"foo": {"type": "integer"},
+				"bar": {"type": "string"}
+			}
+		};
+		
+		var classes = api.Generator().addSchema(schema).classes();
+		assert.isFunction(classes.Anonymous);
+	});
 	
 	it('follows inheritance', function () {
 		var schema = {
