@@ -57,6 +57,10 @@
 		if (url.split('#')[1] === '') return url.split('#')[0];
 		return url;
 	}
+	function propertyExpression (valueExpr, key) {
+		if (/^[a-zA-Z][a-zA-Z0-9_]*/.test(key)) return valueExpr + '.' + key;
+		return valueExpr + '[' + JSON.stringify(key) + ']';
+	}
 	
 	function uriTemplatePart(subject, spec) {
 		var prefix = spec.match(/^[+#./;?&]*/)[0];
@@ -203,7 +207,7 @@
 		if (typeof subject !== 'function') {
 			var subjectVar = subject;
 			subject = function (property) {
-				return subjectVar + '[' + JSON.stringify(property) + ']';
+				return propertyExpression(subjectVar, property);
 			};
 		}
 		
@@ -307,11 +311,15 @@
 			});
 			return url;
 		},
-		canCodeForSchema: function (schema) {
-			if (!schema.type || !(schema.type === 'object' || (schema.type.length == 1 && schema.type[0] === 'object'))) {
-				return false;
-			}
-			return true;
+		schemaAcceptsType: function (schema, type) {
+			return !schema.type || schema.type === type || (Array.isArray(schema.type) && schema.type.indexOf(type) !== -1);
+		},
+		schemaOnlyAcceptsType: function (schema, type) {
+			return schema.type === type || (schema.type && schema.type.length === 1 && schema.type[0] === type);
+		},
+		schemaRequiresProperty: function(schema, property) {
+			if (!schema.required) return false;
+			return schema.required.indexOf(property) !== -1;
 		},
 		getFullSchema: function (schema, haltUrls) {
 			if (!schema || typeof schema['$ref'] !== 'string') return schema;
@@ -325,7 +333,7 @@
 		},
 		codeForUrl: function (url, requireUrl) {
 			var schema = this.getFullSchema(this.tv4.getSchema(url));
-			if (!this.canCodeForSchema(schema)) {
+			if (!this.schemaAcceptsType(schema, 'object')) {
 				throw new Error('Cannot generate class for non-object schema');
 			}
 
@@ -334,7 +342,7 @@
 			var classKey = this.classNameForUrl(url);
 			var classExpression = this.classVarForUrl(url || 'anonymous');
 			
-			code += 'var ' + classExpression + ' = classes[' + JSON.stringify(classKey) + '] = function ' + classExpression + '(value) {\n';
+			code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = function ' + classExpression + '(value) {\n';
 			var body = '';
 			body += 'if (!(this instanceof ' + classExpression + ')) return new ' + classExpression + '(value);\n';
 			if ('default' in schema) {
@@ -349,16 +357,30 @@
 			for (var key in schema.properties || {}) {
 				var subSchema = this.getFullSchema(schema.properties[key]);
 				if ('default' in subSchema) {
-					body += 'if (typeof this[' + JSON.stringify(key) + '] === "undefined") {\n';
-					body += indent('this[' + JSON.stringify(key) + '] = ' + JSON.stringify(subSchema['default']) + ';\n');
+					body += 'if (typeof ' + propertyExpression('this', key) + ' === "undefined") {\n';
+					body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
 					body += '}\n';
 				}
-				if (this.canCodeForSchema(subSchema)) {
+				if (this.schemaAcceptsType(subSchema, 'object')) {
 					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
 					var subClassVar = this.classVarForUrl(subUrl);
 					requireUrl(subUrl);
-					body += 'if (this[' + JSON.stringify(key) + ']) {\n';
-					body += indent('this[' + JSON.stringify(key) + '] = new ' + subClassVar + '(this[' + JSON.stringify(key) + ']);\n');
+					var conditions = [];
+					if (this.schemaAcceptsType('null')) {
+						conditions.push(propertyExpression('this', key));
+					}
+					if (this.schemaAcceptsType('array')) {
+						conditions.push('!Array.isArray(' + propertyExpression('this', key) + ')');
+					}
+					if (this.schemaOnlyAcceptsType(subSchema, 'object')) {
+						if (!this.schemaRequiresProperty(schema, key)) {
+							conditions.push(propertyExpression('this', key));
+						}
+					} else {
+						conditions.push('typeof ' + propertyExpression('this', key) + ' === "object"');
+					}
+					body += 'if (' + conditions.join(' && ') + ') {\n';
+					body += indent('' + propertyExpression('this', key) + ' = new ' + subClassVar + '(' + propertyExpression('this', key) + ');\n');
 					body += '}\n';
 				}
 			}
@@ -419,8 +441,12 @@
 			}.bind(this));
 			if (this.config.validation) {
 				code += classExpression + '.validationErrors = function (value) {\n';
-				code += indent(this.validationCodeType('value', 'object'));
-				code += indent('return [];\n');
+				code += indent('var errors = [];\n');
+				code += indent(this.validationCode('value', url, schema, requireUrl, function (errorExpr, single) {
+					if (single) return 'errors.push(' + errorExpr + ');\n';
+					return 'errors = errors.concat(' + errorExpr + ');\n'
+				}, true));
+				code += indent('return errors;\n');
 				code += '}\n';
 				code += classExpression + '.validate = function (value) {\n';
 				code += indent('var errors = ' + classExpression + '.validationErrors(value);\n');
@@ -429,17 +455,94 @@
 			}
 			return code;
 		},
-		validationCodeType: function (valueExpr, allowed) {
-			if (!Array.isArray(allowed)) allowed = [allowed];
-			if (allowed.length !== 1 || allowed[0] !== 'object') throw new Error('Can only handle objects for now...');
+		validationCode: function (valueExpr, schemaUrl, schema, requireUrl, errorFunc, noReference) {
+			var allowedTypes = schema.type || ['null', 'boolean', 'number', 'string', 'object', 'array'];
+			if (!Array.isArray(allowedTypes)) allowedTypes = [allowedTypes];
+			var allowedType = function (type) {return allowedTypes.indexOf(type) !== -1;};
+
+			var typeCode = {
+				'array': '',
+				'object': '',
+				'string': '',
+				'number': '',
+				'boolean': '',
+				'null': ''
+			};
+
+			// Array constraints
+			if (!allowedType('array')) {
+				typeCode['array'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			}
+
+			if (!allowedType('object')) {
+				typeCode['object'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			} else {
+				typeCode['object'] += 'var objectErrors = [];';
+				for (var key in schema.properties) {
+					var propertyExpr = propertyExpression(valueExpr, key)
+					var subSchema = this.getFullSchema(schema.properties[key]);
+					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
+					if (this.schemaAcceptsType(subSchema, 'object')) {
+						var subClassVar = this.classVarForUrl(subUrl);
+						requireUrl(subUrl);
+						var checkCode = errorFunc(subClassVar + '.validationErrors(' + propertyExpr + ')');
+					} else {
+						var checkCode = this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+					}
+					if (!this.schemaRequiresProperty(schema, key)) {
+						checkCode = 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n' + indent(checkCode) + '}\n';
+					}
+					typeCode['object'] += checkCode;
+				}
+			}
+
+			if (!allowedType('string')) {
+				// Although we'll know it's a string at this point in the code, we use "typeof" instead so it can be grouped
+				typeCode['string'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			}
+
+			if (!allowedType('number') && !allowedType('integer')) {
+				typeCode['number'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			}
+
+			if (!allowedType('boolean')) {
+				typeCode['boolean'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			}
+			
+			if (!allowedType('null')) {
+				typeCode['null'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			}
 			
 			var validation = '';
 			validation += 'if (Array.isArray(' + valueExpr + ')) {\n';
-			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: "object"}}];\n');
+			validation += indent(typeCode['array']);
 			validation += '} else if (' + valueExpr + ' == null) {\n';
-			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: "object"}}];\n');
-			validation += '} else if (typeof ' + valueExpr + ' !== "object") {\n';
-			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: "object"}}];\n');
+			validation += indent(typeCode['null']);
+			
+			// For neatness: figure out which types of object are distinct, and group them into the same else-if-block
+			var distinctCode = {};
+			distinctCode[typeCode['object']] = (distinctCode[typeCode['object']] || []).concat(['object']);
+			distinctCode[typeCode['string']] = (distinctCode[typeCode['string']] || []).concat(['string']);
+			distinctCode[typeCode['number']] = (distinctCode[typeCode['number']] || []).concat(['number']);
+			distinctCode[typeCode['boolean']] = (distinctCode[typeCode['boolean']] || []).concat(['boolean']);
+			
+			var codeBlocks = Object.keys(distinctCode);
+			codeBlocks.sort(function (a, b) {
+				// Sort fewest-options first, so the final "else" saves as much as possible
+				return distinctCode[a].length - distinctCode[b].length;
+			});
+			codeBlocks.forEach(function (code, index) {
+				if (index === codeBlocks.length - 1) {
+					validation += '} else {\n';
+				} else {
+					var condition = distinctCode[code].map(function (type) {
+						return 'typeof ' + valueExpr + ' === ' + JSON.stringify(type);
+					}).join(' || ');
+					validation += '} else if (' + condition + ') {\n';
+				}
+				validation += indent(code);
+			});
+			
 			validation += '}\n';
 			return validation;
 		},
