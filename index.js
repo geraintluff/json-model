@@ -312,8 +312,8 @@
 				var prettyRel = rel.replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
 					return nextChar.toUpperCase();
 				});
-				var method = ldo.method || 'GET';
-				var encType = ldo.encType || ldo.enctype || 'application/json';
+				var method = (ldo.method || 'GET').toUpperCase();
+				var encType = ldo.encType || ldo.enctype || ((method === 'GET' || method === 'DELETE') ? 'application/x-www-form-urlencoded' : 'application/json');
 				
 				var body = '';
 				body += 'if (typeof params === "function") {\n';
