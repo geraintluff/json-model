@@ -101,14 +101,58 @@
 					return 'encodeURI(' + code + ')';
 				});
 			}
-			var code = subject(varName, !modFunctions.length ? null : function (x) {
+			
+			// Construct actual code
+			var result = subject(varName);
+			var expr = result.code, type = result.type;
+			var modFunction = !modFunctions.length ? null : function (x) {
 				modFunctions.forEach(function (func) {
 					x = func(x);
 				});
 				return x;
-			}, itemJoin, arrayPrefix, pairJoin);
+			};
+			
+			function couldBeType(t) {
+				if (Array.isArray(type)) return type.indexOf(t) === -1;
+				if (typeof type === 'string') return type === t;
+				return true;
+			}
+			
+			var typeCode = {};
+			if (couldBeType('array')) {
+				if (!modFunction) return JSON.stringify(arrayPrefix) + ' + ' + expr + '.join(' + JSON.stringify(itemJoin + arrayPrefix) + ')';
+				typeCode['array'] = expr + '.map(function (x) {\n'
+					+ '	return ' + (arrayPrefix ? JSON.stringify(arrayPrefix) + ' + ' : '') + modFunction('x') + ';\n'
+					+ '}).join(' + JSON.stringify(itemJoin) + ')';
+			}
+			if (couldBeType('object')) {
+				if (!modFunction) modFunction = function (x) {return x};
+				typeCode['object'] ='Object.keys(' + expr + ').map(function (key) {\n'
+					+ '	return ' + modFunction('key') + ' + ' + JSON.stringify(pairJoin) + ' + ' + modFunction(expr + '[key]') + ';\n'
+					+ '}).join(' + JSON.stringify(itemJoin) + ')';
+			}
+			if (couldBeType('string') || couldBeType('number') || couldBeType('integer') || couldBeType('boolean')) {
+				typeCode['plain'] = modFunction(expr);
+			}
+			
+			var code;
+			if (Object.keys(typeCode).length === 1) {
+				code = typeCode[Object.keys(typeCode)[0]];
+			} else {
+				code = '';
+				if (typeCode.object && typeCode.plain) {
+					code = '(typeof ' + expr + ' === "object" ? ' + typeCode.object + ' : ' + typeCode.plain + ')';
+				} else if (typeCode.object) {
+					code = typeCode.object;
+				} else {
+					code = typeCode.plain;
+				}
+				if (typeCode.array) {
+					code = '(Array.isArray(' + expr + ') ? ' + typeCode.array + ' : ' + code + ')';
+				}
+			}
 			if (conditional) {
-				code = '(' + subject(varName) + '?' + JSON.stringify(conditional) + '+' + code + ':"")';
+				code = '(' + expr + '?' + JSON.stringify(conditional) + '+' + code + ':"")';
 			}
 			codeParts.push(code);
 		});
@@ -119,10 +163,8 @@
 	var uriTemplate = api.uriTemplate = function uriTemplate(subject, template) {
 		if (typeof subject !== 'function') {
 			var subjectVar = subject;
-			subject = function (property, modFunction) {
-				var varExpression = subjectVar + '[' + JSON.stringify(property) + ']';
-				if (!modFunction) return varExpression;
-				return '(Array.isArray(' + varExpression + ') ? ' + varExpression + ' : [' + varExpression + ']).map(function (x) {\n\treturn ' + modFunction('x') + ';\n}).join(",")';
+			subject = function (property) {
+				return {code: subjectVar + '[' + JSON.stringify(property) + ']'};
 			};
 		}
 		
