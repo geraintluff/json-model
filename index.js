@@ -11,7 +11,45 @@
 	}
 }(this, function (tv4) {
 	var api = {};
-
+	
+	// taken from tv4
+	var ErrorCodes = {
+		INVALID_TYPE: 0,
+		ENUM_MISMATCH: 1,
+		ANY_OF_MISSING: 10,
+		ONE_OF_MISSING: 11,
+		ONE_OF_MULTIPLE: 12,
+		NOT_PASSED: 13,
+		// Numeric errors
+		NUMBER_MULTIPLE_OF: 100,
+		NUMBER_MINIMUM: 101,
+		NUMBER_MINIMUM_EXCLUSIVE: 102,
+		NUMBER_MAXIMUM: 103,
+		NUMBER_MAXIMUM_EXCLUSIVE: 104,
+		// String errors
+		STRING_LENGTH_SHORT: 200,
+		STRING_LENGTH_LONG: 201,
+		STRING_PATTERN: 202,
+		// Object errors
+		OBJECT_PROPERTIES_MINIMUM: 300,
+		OBJECT_PROPERTIES_MAXIMUM: 301,
+		OBJECT_REQUIRED: 302,
+		OBJECT_ADDITIONAL_PROPERTIES: 303,
+		OBJECT_DEPENDENCY_KEY: 304,
+		// Array errors
+		ARRAY_LENGTH_SHORT: 400,
+		ARRAY_LENGTH_LONG: 401,
+		ARRAY_UNIQUE: 402,
+		ARRAY_ADDITIONAL_ITEMS: 403,
+		// Custom/user-defined errors
+		FORMAT_CUSTOM: 500,
+		KEYWORD_CUSTOM: 501,
+		// Schema structure
+		CIRCULAR_REFERENCE: 600,
+		// Non-standard validation options
+		UNKNOWN_PROPERTY: 1000
+	};
+	
 	function indent(string) {
 		return ('\t' + string.replace(/\n/g, '\n\t')).replace(/\t*$/, '');
 	}
@@ -192,7 +230,8 @@
 		config = config || {};
 		this.tv4 = config.tv4 || tv4.freshApi();
 		this.config = {
-			directMethods: config.directMethods !== false
+			directMethods: config.directMethods !== false,
+			validation: config.validation !== false
 		};
 		this.classNames = {};
 		this.classVars = {GeneratedClass: true}; // make sure it won't be used as a variable name later
@@ -301,11 +340,12 @@
 			if ('default' in schema) {
 				body += 'value = value || ' + JSON.stringify(schema['default']) + ';\n';
 			}
-			body += 'var keys = Object.keys(value);\n';
+			body += '\nvar keys = Object.keys(value);\n';
 			body += 'keys.forEach(function (key) {\n';
 			body += indent('this[key] = value[key];\n');
 			body += '}.bind(this));\n';
 			
+			// Defaults and property conversion
 			for (var key in schema.properties || {}) {
 				var subSchema = this.getFullSchema(schema.properties[key]);
 				if ('default' in subSchema) {
@@ -323,7 +363,7 @@
 				}
 			}
 			
-			body += 'superclass.apply(this, arguments);\n';
+			body += '\nsuperclass.apply(this, arguments);\n';
 			code += indent(body);
 			code += '}\n';
 			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
@@ -334,6 +374,8 @@
 			if (schema.description) {
 				code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
 			}
+			
+			// Hyper-schema links
 			code += classExpression + '.links = {};\n';
 			(schema.links || []).forEach(function (ldo) {
 				var rel = ldo.rel;
@@ -375,7 +417,31 @@
 					code += '};\n';
 				}
 			}.bind(this));
+			if (this.config.validation) {
+				code += classExpression + '.validationErrors = function (value) {\n';
+				code += indent(this.validationCodeType('value', 'object'));
+				code += indent('return [];\n');
+				code += '}\n';
+				code += classExpression + '.validate = function (value) {\n';
+				code += indent('var errors = ' + classExpression + '.validationErrors(value);\n');
+				code += indent('return errors.length ? {valid: false, errors: errors} : {valid: true};\n');
+				code += '}\n';
+			}
 			return code;
+		},
+		validationCodeType: function (valueExpr, allowed) {
+			if (!Array.isArray(allowed)) allowed = [allowed];
+			if (allowed.length !== 1 || allowed[0] !== 'object') throw new Error('Can only handle objects for now...');
+			
+			var validation = '';
+			validation += 'if (Array.isArray(' + valueExpr + ')) {\n';
+			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: "object"}}];\n');
+			validation += '} else if (' + valueExpr + ' == null) {\n';
+			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: "object"}}];\n');
+			validation += '} else if (typeof ' + valueExpr + ' !== "object") {\n';
+			validation += indent('return [{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: "object"}}];\n');
+			validation += '}\n';
+			return validation;
 		},
 		classes: function (superclass, request) {
 			var code = this.code();
