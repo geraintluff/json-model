@@ -330,7 +330,7 @@
 				body += indent('href: href,\n');
 				body += indent('method: ' + JSON.stringify(method) + ',\n');
 				body += indent('encType: ' + JSON.stringify(encType) + ',\n');
-				body += indent('data: null\n');
+				body += indent('data: params || null\n');
 				body += '}, callback || function () {});';
 				
 				var methodName = method.toLowerCase() + prettyRel.charAt(0).toUpperCase() + prettyRel.substring(1);
