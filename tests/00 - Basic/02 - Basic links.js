@@ -20,7 +20,7 @@ describe('Basic hypermedia', function () {
 		var demo = new Demo({
 			author: "/users/0"
 		});
-		assert.isFunction(demo.getAuthor);
+		assert.isFunction(Demo.links.getAuthor);
 	});
 	
 	it('handles no-parameter GET requests', function () {
@@ -39,6 +39,8 @@ describe('Basic hypermedia', function () {
 		var request = function (params, callback) {
 			requestParams.push(params);
 		};
+		
+		console.log(api.Generator().addSchema('/demo', schema, 'Demo').addSchema('/other/demo', schema).code());
 		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes(null, request);
 	

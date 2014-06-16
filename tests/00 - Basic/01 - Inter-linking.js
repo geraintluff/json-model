@@ -13,7 +13,7 @@ describe('Interlinking', function () {
 		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
 		var Demo = classes.Demo;
-		var Bar = classes['/demo#/properties/bar'];
+		var Bar = classes.Bar;
 
 		assert.isFunction(Bar);
 		

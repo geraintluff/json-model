@@ -186,12 +186,16 @@
 		return codeParts.join(' + ');
 	};
 	
-	var schemaCounter = 0;
-	var Generator = api.Generator = function Generator(tv4Instance) {
-		if (!(this instanceof Generator)) return new Generator(tv4Instance);
+	var Generator = api.Generator = function Generator(config) {
+		if (!(this instanceof Generator)) return new Generator(config);
 		
-		this.tv4 = tv4Instance || tv4.freshApi();
+		config = config || {};
+		this.tv4 = config.tv4 || tv4.freshApi();
+		this.config = {
+			directMethods: config.directMethods !== false
+		};
 		this.classNames = {};
+		this.classVars = {GeneratedClass: true}; // make sure it won't be used as a variable name later
 	};
 	Generator.prototype = {
 		addSchema: function (url, schema, name) {
@@ -208,6 +212,7 @@
 			}
 			url = normUrl(url || '');
 			this.classNames[url] = name || url;
+			this.classVarForUrl(url); // reserves the name
 			return this;
 		},
 		missingSchemas: function () {
@@ -232,8 +237,27 @@
 			code = 'function (superclass) {\n' + indent(code) + '}';
 			return code;
 		},
-		nameForUrl: function (url) {
-			return this.classNames[url] = this.classNames[url] || url;
+		classVarForUrl: function (url) {
+			var varName = this.classNames[url] || url;
+			varName = varName.replace(/[^a-zA-Z0-9]*$/, '').replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
+				return nextChar.toUpperCase();
+			});
+			varName = varName.replace(/^[^a-zA-Z]*/, ''); // strip leading zeros
+			varName = varName.charAt(0).toUpperCase() + varName.substring(1);
+			
+			if (!this.classVars[varName + 'Class'] || this.classVars[varName + 'Class'] === url) {
+				this.classVars[varName + 'Class'] = url;
+				return varName;
+			}
+			var counter = 2;
+			while (this.classVars[varName + counter + 'Class'] && this.classVars[varName + counter + 'Class'] !== url) {
+				counter++;
+			}
+			this.classVars[varName + counter + 'Class'] = url;
+			return varName + counter + 'Class';
+		},
+		classNameForUrl: function (url) {
+			return this.classNames[url] = this.classNames[url] || this.classVarForUrl(url);
 		},
 		extendUrl: function (url, components) {
 			if (url.indexOf('#') === -1) url += '#';
@@ -263,12 +287,13 @@
 			if (!this.canCodeForSchema(schema)) {
 				throw new Error('Cannot generate class for non-object schema');
 			}
-			
-			var name = this.nameForUrl(url);
-			var classExpression = 'classes[' + JSON.stringify(name) + ']';
-			
+
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
-			code += classExpression + ' = function (value) {\n';
+			
+			var classKey = this.classNameForUrl(url);
+			var classExpression = this.classVarForUrl(url || 'anonymous');
+			
+			code += 'var ' + classExpression + ' = classes[' + JSON.stringify(classKey) + '] = function ' + classExpression + '(value) {\n';
 			var body = '';
 			body += 'if (!(this instanceof ' + classExpression + ')) return new ' + classExpression + '(value);\n';
 			if ('default' in schema) {
@@ -288,10 +313,10 @@
 				}
 				if (this.canCodeForSchema(subSchema)) {
 					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
-					var subName = this.nameForUrl(subUrl);
+					var subClassVar = this.classVarForUrl(subUrl);
 					requireUrl(subUrl);
 					body += 'if (this[' + JSON.stringify(key) + ']) {\n';
-					body += indent('this[' + JSON.stringify(key) + '] = new classes[' + JSON.stringify(subName) + '](this[' + JSON.stringify(key) + ']);\n');
+					body += indent('this[' + JSON.stringify(key) + '] = new ' + subClassVar + '(this[' + JSON.stringify(key) + ']);\n');
 					body += '}\n';
 				}
 			}
@@ -299,6 +324,7 @@
 			body += 'superclass.apply(this, arguments);\n';
 			code += indent(body);
 			code += '}\n';
+			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
 			code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
 			if (schema.title) {
 				code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
@@ -306,7 +332,7 @@
 			if (schema.description) {
 				code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
 			}
-			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
+			code += classExpression + '.links = {};\n';
 			(schema.links || []).forEach(function (ldo) {
 				var rel = ldo.rel;
 				var prettyRel = rel.replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
@@ -321,9 +347,9 @@
 				body += indent('params = null;\n');
 				body += '}\n';
 				body += 'var href = ' + api.uriTemplate(function (property) {
-					var code = 'this[' + JSON.stringify(property) + ']';
+					var code = 'obj[' + JSON.stringify(property) + ']';
 					if (/^[a-zA-Z][a-zA-Z0-9]*$/.test(property)) {
-						code = 'this.' + property;
+						code = 'obj.' + property;
 					}
 					return {
 						code: code,
@@ -338,10 +364,15 @@
 				body += '}, callback || function () {});';
 				
 				var methodName = method.toLowerCase() + prettyRel.charAt(0).toUpperCase() + prettyRel.substring(1);
-				code += classExpression + '.prototype[' + JSON.stringify(methodName) + '] = function (params, callback) {\n';
+				code += classExpression + '.links[' + JSON.stringify(methodName) + ']' + ' = function (obj, params, callback) {\n';
 				code += indent(body);
-				code += '}\n';
-			});
+				code += '};\n';
+				if (this.config.directMethods) {
+					code += classExpression + '.prototype[' + JSON.stringify(methodName) + ']' + ' = function (params, callback) {\n';
+					code += indent('return ' + classExpression + '.links[' + JSON.stringify(methodName) + '](this, params, callback);\n');
+					code += '};\n';
+				}
+			}.bind(this));
 			return code;
 		},
 		classes: function (superclass, request) {
