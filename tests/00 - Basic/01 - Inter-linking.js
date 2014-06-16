@@ -13,16 +13,16 @@ describe('Interlinking', function () {
 		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
 		var Demo = classes.Demo;
-		var Bar = classes.Bar;
+		var DemoBar = classes.DemoBar;
 
-		assert.isFunction(Bar);
+		assert.isFunction(DemoBar);
 		
 		var demo = new Demo({
 			foo: 1,
 			bar: {a: 'A'}
 		});
 		assert.deepEqual(demo.bar, {a: 'A'});
-		assert.instanceOf(demo.bar, Bar);
+		assert.instanceOf(demo.bar, DemoBar);
 	});
 
 	it('handles recursion', function () {

@@ -241,7 +241,7 @@
 		classVarForUrl: function (url, suffix) {
 			if (typeof suffix !== 'string') suffix = 'Class';
 			var varName = this.classNames[url] || url;
-			varName = varName.replace(/[^a-zA-Z0-9]*$/, '').replace(/.*[/#?]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
+			varName = varName.replace(/[^a-zA-Z0-9]*$/, '').replace(/[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
 				return nextChar.toUpperCase();
 			});
 			varName = varName.replace(/^[^a-zA-Z]*/, '') || 'anonymous'; // strip leading zeros
