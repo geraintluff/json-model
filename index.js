@@ -104,6 +104,7 @@
 			
 			// Construct actual code
 			var result = subject(varName);
+			if (typeof result === 'string') result = {code: result};
 			var expr = result.code, type = result.type;
 			var modFunction = !modFunctions.length ? null : function (x) {
 				modFunctions.forEach(function (func) {
@@ -164,7 +165,7 @@
 		if (typeof subject !== 'function') {
 			var subjectVar = subject;
 			subject = function (property) {
-				return {code: subjectVar + '[' + JSON.stringify(property) + ']'};
+				return subjectVar + '[' + JSON.stringify(property) + ']';
 			};
 		}
 		
@@ -319,7 +320,12 @@
 				body += indent('callback = params;\n');
 				body += indent('params = null;\n');
 				body += '}\n';
-				body += 'var href = ' + api.uriTemplate('this', ldo.href) + ';\n';
+				body += 'var href = ' + api.uriTemplate(function (property) {
+					return {
+						code: 'this[' + JSON.stringify(property) + ']',
+						type: ((schema.properties || {})[property] || {}).type
+					};
+				}, ldo.href) + ';\n';
 				body += 'request({\n';
 				body += indent('href: href,\n');
 				body += indent('method: ' + JSON.stringify(method) + ',\n');
