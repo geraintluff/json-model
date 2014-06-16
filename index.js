@@ -321,8 +321,12 @@
 				body += indent('params = null;\n');
 				body += '}\n';
 				body += 'var href = ' + api.uriTemplate(function (property) {
+					var code = 'this[' + JSON.stringify(property) + ']';
+					if (/^[a-zA-Z][a-zA-Z0-9]*$/.test(property)) {
+						code = 'this.' + property;
+					}
 					return {
-						code: 'this[' + JSON.stringify(property) + ']',
+						code: code,
 						type: ((schema.properties || {})[property] || {}).type
 					};
 				}, ldo.href) + ';\n';
