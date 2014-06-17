@@ -340,7 +340,7 @@
 			var classExpression = this.classVarForUrl(url || 'anonymous');
 			if (!this.schemaAcceptsType(schema, 'object')) {
 				// Validation and links only
-				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = {}\n';
+				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = {};\n';
 			} else {
 				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = function ' + classExpression + '(value) {\n';
 				var body = '';
@@ -387,7 +387,7 @@
 				
 				body += '\nsuperclass.apply(this, arguments);\n';
 				code += indent(body);
-				code += '}\n';
+				code += '};\n';
 				code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
 				code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
 				if (schema.title) {
@@ -513,9 +513,9 @@
 				if (!isNaN(divisor)) {
 					numberCode += 'if (' + valueExpr + '%' + JSON.stringify(divisor) + ' !== 0) {\n';
 					if (divisor === 1) {
-						numberCode += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true);
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true));
 					} else {
-						numberCode += errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true);
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true));
 					}
 					numberCode += '}\n';
 				}
@@ -542,15 +542,19 @@
 			distinctCode[typeCode['string']] = (distinctCode[typeCode['string']] || []).concat(['string']);
 			distinctCode[typeCode['number']] = (distinctCode[typeCode['number']] || []).concat(['number']);
 			distinctCode[typeCode['boolean']] = (distinctCode[typeCode['boolean']] || []).concat(['boolean']);
-			
+
 			var codeBlocks = Object.keys(distinctCode);
 			codeBlocks.sort(function (a, b) {
 				// Sort fewest-options first, so the final "else" saves as much as possible
+				if (!a) return 1;
+				if (!b) return -1;
 				return distinctCode[a].length - distinctCode[b].length;
 			});
 			codeBlocks.forEach(function (code, index) {
 				if (index === codeBlocks.length - 1) {
-					validation += '} else {\n';
+					if (code) { // if the last one's empty, just leave it
+						validation += '} else {\n';
+					}
 				} else {
 					var condition = distinctCode[code].map(function (type) {
 						return 'typeof ' + valueExpr + ' === ' + JSON.stringify(type);
