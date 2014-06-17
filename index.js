@@ -333,70 +333,71 @@
 		},
 		codeForUrl: function (url, requireUrl) {
 			var schema = this.getFullSchema(this.tv4.getSchema(url));
-			if (!this.schemaAcceptsType(schema, 'object')) {
-				throw new Error('Cannot generate class for non-object schema');
-			}
 
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
 			
 			var classKey = this.classNameForUrl(url);
 			var classExpression = this.classVarForUrl(url || 'anonymous');
-			
-			code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = function ' + classExpression + '(value) {\n';
-			var body = '';
-			body += 'if (!(this instanceof ' + classExpression + ')) return new ' + classExpression + '(value);\n';
-			if ('default' in schema) {
-				body += 'value = value || ' + JSON.stringify(schema['default']) + ';\n';
-			}
-			body += '\nvar keys = Object.keys(value);\n';
-			body += 'keys.forEach(function (key) {\n';
-			body += indent('this[key] = value[key];\n');
-			body += '}.bind(this));\n';
-			
-			// Defaults and property conversion
-			for (var key in schema.properties || {}) {
-				var subSchema = this.getFullSchema(schema.properties[key]);
-				if ('default' in subSchema) {
-					body += 'if (typeof ' + propertyExpression('this', key) + ' === "undefined") {\n';
-					body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
-					body += '}\n';
+			if (!this.schemaAcceptsType(schema, 'object')) {
+				// Validation and links only
+				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = {}\n';
+			} else {
+				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = function ' + classExpression + '(value) {\n';
+				var body = '';
+				body += 'if (!(this instanceof ' + classExpression + ')) return new ' + classExpression + '(value);\n';
+				if ('default' in schema) {
+					body += 'value = value || ' + JSON.stringify(schema['default']) + ';\n';
 				}
-				if (this.schemaAcceptsType(subSchema, 'object')) {
-					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
-					var subClassVar = this.classVarForUrl(subUrl);
-					requireUrl(subUrl);
-					var conditions = [];
-					if (this.schemaAcceptsType('null')) {
-						conditions.push(propertyExpression('this', key));
+				body += '\nvar keys = Object.keys(value);\n';
+				body += 'keys.forEach(function (key) {\n';
+				body += indent('this[key] = value[key];\n');
+				body += '}.bind(this));\n';
+				
+				// Defaults and property conversion
+				for (var key in schema.properties || {}) {
+					var subSchema = this.getFullSchema(schema.properties[key]);
+					if ('default' in subSchema) {
+						body += 'if (typeof ' + propertyExpression('this', key) + ' === "undefined") {\n';
+						body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
+						body += '}\n';
 					}
-					if (this.schemaAcceptsType('array')) {
-						conditions.push('!Array.isArray(' + propertyExpression('this', key) + ')');
-					}
-					if (this.schemaOnlyAcceptsType(subSchema, 'object')) {
-						if (!this.schemaRequiresProperty(schema, key)) {
+					if (this.schemaAcceptsType(subSchema, 'object')) {
+						var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
+						var subClassVar = this.classVarForUrl(subUrl);
+						requireUrl(subUrl);
+						var conditions = [];
+						if (this.schemaAcceptsType('null')) {
 							conditions.push(propertyExpression('this', key));
 						}
-					} else {
-						conditions.push('typeof ' + propertyExpression('this', key) + ' === "object"');
+						if (this.schemaAcceptsType('array')) {
+							conditions.push('!Array.isArray(' + propertyExpression('this', key) + ')');
+						}
+						if (this.schemaOnlyAcceptsType(subSchema, 'object')) {
+							if (!this.schemaRequiresProperty(schema, key)) {
+								conditions.push(propertyExpression('this', key));
+							}
+						} else {
+							conditions.push('typeof ' + propertyExpression('this', key) + ' === "object"');
+						}
+						body += 'if (' + conditions.join(' && ') + ') {\n';
+						body += indent('' + propertyExpression('this', key) + ' = new ' + subClassVar + '(' + propertyExpression('this', key) + ');\n');
+						body += '}\n';
 					}
-					body += 'if (' + conditions.join(' && ') + ') {\n';
-					body += indent('' + propertyExpression('this', key) + ' = new ' + subClassVar + '(' + propertyExpression('this', key) + ');\n');
-					body += '}\n';
+				}
+				
+				body += '\nsuperclass.apply(this, arguments);\n';
+				code += indent(body);
+				code += '}\n';
+				code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
+				code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
+				if (schema.title) {
+					code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
+				}
+				if (schema.description) {
+					code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
 				}
 			}
-			
-			body += '\nsuperclass.apply(this, arguments);\n';
-			code += indent(body);
-			code += '}\n';
-			code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
-			code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
-			if (schema.title) {
-				code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
-			}
-			if (schema.description) {
-				code += classExpression + '.description = ' + JSON.stringify(schema.description) + ';\n';
-			}
-			
+				
 			// Hyper-schema links
 			code += classExpression + '.links = {};\n';
 			(schema.links || []).forEach(function (ldo) {
@@ -433,7 +434,7 @@
 				code += classExpression + '.links[' + JSON.stringify(methodName) + ']' + ' = function (obj, params, callback) {\n';
 				code += indent(body);
 				code += '};\n';
-				if (this.config.directMethods) {
+				if (this.config.directMethods && this.schemaAcceptsType(schema, 'object')) {
 					code += classExpression + '.prototype[' + JSON.stringify(methodName) + ']' + ' = function (params, callback) {\n';
 					code += indent('return ' + classExpression + '.links[' + JSON.stringify(methodName) + '](this, params, callback);\n');
 					code += '};\n';
@@ -503,6 +504,22 @@
 
 			if (!allowedType('number') && !allowedType('integer')) {
 				typeCode['number'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			} else {
+				var numberCode = '';
+				var divisor = NaN;
+				if (!allowedType('number')) {
+					divisor = 1;
+				}
+				if (!isNaN(divisor)) {
+					numberCode += 'if (' + valueExpr + '%' + JSON.stringify(divisor) + ' !== 0) {\n';
+					if (divisor === 1) {
+						numberCode += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true);
+					} else {
+						numberCode += errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true);
+					}
+					numberCode += '}\n';
+				}
+				typeCode['number'] += numberCode;
 			}
 
 			if (!allowedType('boolean')) {
