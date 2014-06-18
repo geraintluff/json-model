@@ -578,6 +578,28 @@
 					}
 					numberCode += '}\n';
 				}
+				if ('minimum' in schema) {
+					if (schema.exclusiveMinimum) {
+						numberCode += 'if (' + valueExpr + ' <= ' + JSON.stringify(schema.minimum) + ') {\n';
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:""}', true));
+						numberCode += '}\n';
+					} else {
+						numberCode += 'if (' + valueExpr + ' < ' + JSON.stringify(schema.minimum) + ') {\n';
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:""}', true));
+						numberCode += '}\n';
+					}
+				}
+				if ('maximum' in schema) {
+					if (schema.exclusiveMaximum) {
+						numberCode += 'if (' + valueExpr + ' >= ' + JSON.stringify(schema.maximum) + ') {\n';
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:""}', true));
+						numberCode += '}\n';
+					} else {
+						numberCode += 'if (' + valueExpr + ' > ' + JSON.stringify(schema.maximum) + ') {\n';
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:""}', true));
+						numberCode += '}\n';
+					}
+				}
 				typeCode['number'] += numberCode;
 			}
 
