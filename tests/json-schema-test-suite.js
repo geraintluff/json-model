@@ -31,5 +31,5 @@ describe('JSON Schema validation:', function () {
 	
 	createTests('type.json');
 	createTests('properties.json');
-	//createTests('required.json');
+	createTests('required.json');
 });
