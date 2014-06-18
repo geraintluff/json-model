@@ -35,6 +35,8 @@ describe('JSON Schema validation:', function () {
 	createTests('required.json');
 	createTests('maxItems.json');
 	createTests('minItems.json');
+	createTests('maxLength.json');
+	createTests('minLength.json');
 	createTests('minimum.json');
 	createTests('maximum.json');
 });

@@ -235,7 +235,8 @@
 		this.tv4 = config.tv4 || tv4.freshApi();
 		this.config = {
 			directMethods: config.directMethods !== false,
-			validation: config.validation !== false
+			validation: config.validation !== false,
+			unicodeLength: config.unicodeLength !== false
 		};
 		this.classNames = {};
 		this.classVars = {GeneratedClass: true}; // make sure it won't be used as a variable name later
@@ -264,6 +265,11 @@
 		},
 		code: function () {
 			var code = '';
+			if (this.config.unicodeLength) {
+				code += 'function unicodeLength(string) {\n';
+				code += indent('return string.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "_").length;\n');
+				code += '}\n';
+			}
 			code += 'superclass = superclass || function GeneratedClass() {};\n';
 			code += 'request = request || function () {throw new Error("No web-request function provided");};\n';
 			code += 'var classes = {};\n';
@@ -563,6 +569,24 @@
 			if (!allowedType('string')) {
 				// Although we'll know it's a string at this point in the code, we use "typeof" instead so it can be grouped
 				typeCode['string'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			} else {
+				var stringCode = '';
+				var lengthExpr = valueExpr + '.length';
+				if (this.config.unicodeLength && (schema.minLength || 'maxLength' in schema)) {
+					stringCode += 'var stringLength = unicodeLength(' + valueExpr + ');\n';
+					lengthExpr = 'stringLength';
+				}
+				if (schema.minLength) {
+					stringCode += 'if (' + lengthExpr + ' < ' + JSON.stringify(schema.minLength) + ') {\n';
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_SHORT) + ', params: {length: ' + lengthExpr + ', minimum: ' + JSON.stringify(schema.minLength) + '}, path:""}', true));
+					stringCode += '}\n';
+				}
+				if ('maxLength' in schema) {
+					stringCode += 'if (' + lengthExpr + ' > ' + JSON.stringify(schema.maxLength) + ') {\n';
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_LONG) + ', params: {length: ' + lengthExpr + ', maximum: ' + JSON.stringify(schema.maxLength) + '}, path:""}', true));
+					stringCode += '}\n';
+				}
+				typeCode['string'] += stringCode;
 			}
 
 			if (!allowedType('number') && !allowedType('integer')) {
