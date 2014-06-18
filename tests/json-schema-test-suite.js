@@ -39,4 +39,5 @@ describe('JSON Schema validation:', function () {
 	createTests('minLength.json');
 	createTests('minimum.json');
 	createTests('maximum.json');
+	createTests('dependencies.json');
 });

@@ -504,11 +504,32 @@
 				typeCode['object'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
 			} else {
 				var objectCode = '';
-				Object.keys(schema.properties || {}).forEach(function (key) {
-					var propertyExpr = propertyExpression(valueExpr, key)
-					var subSchema = this.getFullSchema(schema.properties[key]);
-					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
-					var checkCode = this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+				var doneKeys = {};
+				var specificKeys = Object.keys(schema.properties || {}).concat(Object.keys(schema.dependencies || {})).concat(schema.required || []);
+				specificKeys.forEach(function (key) {
+					if (doneKeys[key]) return;
+					doneKeys[key] = true;
+					var propertyExpr = propertyExpression(valueExpr, key);
+					var checkCode = '';
+					if (schema.properties && schema.properties[key]) {
+						var subSchema = this.getFullSchema(schema.properties[key]);
+						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
+						checkCode += this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+					}
+					if (schema.dependencies && key in schema.dependencies) {
+						if (Array.isArray(schema.dependencies[key]) || typeof schema.dependencies[key] === 'string') {
+							var depKeys = Array.isArray(schema.dependencies[key]) ? schema.dependencies[key] : [schema.dependencies[key]];
+							depKeys.forEach(function (dependency) {
+								checkCode += 'if (!(' + JSON.stringify(dependency) + ' in ' + valueExpr + ')) {\n';
+								checkCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_DEPENDENCY_KEY) + ', params: {key: ' + JSON.stringify(key) + ', missing: ' + JSON.stringify(dependency) + '}, path:""}', true));
+								checkCode += '}\n';
+							});
+						} else {
+							var subSchema = this.getFullSchema(schema.dependencies[key]);
+							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['dependencies', key]);
+							checkCode += this.validationCode(valueExpr, subUrl, subSchema, requireUrl, errorFunc);
+						}
+					}
 					objectCode += 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n';
 					objectCode += indent(checkCode);
 					if (this.schemaRequiresProperty(schema, key)) {
@@ -517,13 +538,6 @@
 					}
 					objectCode += '}\n';
 				}.bind(this));
-				(schema.required || []).forEach(function (key) {
-					if (!schema.properties || !schema.properties[key]) {
-						objectCode += 'if (!(' + JSON.stringify(key) + ' in ' + valueExpr + ')) {\n';
-						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_REQUIRED) + ', params: {key: ' + JSON.stringify(key) + '}, path:""}', true));
-						objectCode += '}\n';
-					}
-				});
 				if (schema.patternProperties || 'additionalProperties' in schema) {
 					objectCode += 'var keys = Object.keys(' + valueExpr + ');\n';
 					objectCode += 'var knownKeys = {' + Object.keys(schema.properties).map(function (key) {
