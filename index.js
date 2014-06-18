@@ -540,8 +540,12 @@
 						}
 						objectCode += indent('}');
 					}
-					if (schema.patternProperties && 'additionalProperties' in schema) {
-						objectCode += indent('if (!matched && !knownKeys[key]) {\n');
+					if ('additionalProperties' in schema) {
+						if (schema.patternProperties) {
+							objectCode += indent('if (!matched && !knownKeys[key]) {\n');
+						} else {
+							objectCode += indent('if (!knownKeys[key]) {\n');
+						}
 						if (!schema.additionalProperties) {
 							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {}, path:""}', true)));
 						} else if (typeof schema.additionalProperties === 'object') {
