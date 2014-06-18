@@ -284,7 +284,7 @@
 		classVarForUrl: function (url, suffix) {
 			if (typeof suffix !== 'string') suffix = 'Class';
 			var varName = this.classNames[url] || url;
-			varName = varName.replace(/[^a-zA-Z0-9]*$/, '').replace(/[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/, function (match, nextChar) {
+			varName = varName.replace(/[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/g, function (match, nextChar) {
 				return nextChar.toUpperCase();
 			});
 			varName = varName.replace(/^[^a-zA-Z]*/, '') || 'anonymous'; // strip leading zeros
@@ -461,6 +461,12 @@
 			if (!Array.isArray(allowedTypes)) allowedTypes = [allowedTypes];
 			var allowedType = function (type) {return allowedTypes.indexOf(type) !== -1;};
 
+			if (!noReference && this.schemaAcceptsType(schema, 'object')) {
+				var classVar = this.classVarForUrl(schemaUrl);
+				requireUrl(schemaUrl);
+				return errorFunc(classVar + '.validationErrors(' + valueExpr + ')');
+			}
+
 			var typeCode = {
 				'array': '',
 				'object': '',
@@ -471,7 +477,7 @@
 			};
 
 			// Array constraints
-			if (!allowedType('array')) {
+			if (!this.schemaAcceptsType(schema, 'array')) {
 				typeCode['array'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
 			} else {
 				var arrayCode = '';
@@ -496,18 +502,22 @@
 					var propertyExpr = propertyExpression(valueExpr, key)
 					var subSchema = this.getFullSchema(schema.properties[key]);
 					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
-					if (this.schemaAcceptsType(subSchema, 'object')) {
-						var subClassVar = this.classVarForUrl(subUrl);
-						requireUrl(subUrl);
-						var checkCode = errorFunc(subClassVar + '.validationErrors(' + propertyExpr + ')');
-					} else {
-						var checkCode = this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+					var checkCode = this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+					objectCode += 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n';
+					objectCode += indent(checkCode);
+					if (this.schemaRequiresProperty(schema, key)) {
+						objectCode += '} else {\n';
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_REQUIRED) + ', params: {key: ' + JSON.stringify(key) + '}, path:""}', true));
 					}
-					if (!this.schemaRequiresProperty(schema, key)) {
-						checkCode = 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n' + indent(checkCode) + '}\n';
-					}
-					objectCode += checkCode;
+					objectCode += '}\n';
 				}.bind(this));
+				(schema.required || []).forEach(function (key) {
+					if (!schema.properties || !schema.properties[key]) {
+						objectCode += 'if (!(' + JSON.stringify(key) + ' in ' + valueExpr + ')) {\n';
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_REQUIRED) + ', params: {key: ' + JSON.stringify(key) + '}, path:""}', true));
+						objectCode += '}\n';
+					}
+				});
 				if (schema.patternProperties || 'additionalProperties' in schema) {
 					objectCode += 'var keys = Object.keys(' + valueExpr + ');\n';
 					objectCode += 'var knownKeys = {' + Object.keys(schema.properties).map(function (key) {
@@ -516,7 +526,7 @@
 					objectCode += 'for (var i = 0; i < keys.length; i++) {\n';
 					objectCode += indent('var key = keys[i];\n');
 					if (schema.patternProperties && 'additionalProperties' in schema) {
-						objectCode += 'var matched = false;\n';
+						objectCode += indent('var matched = false;\n');
 					}
 					var propertyExpr = valueExpr + '[key]';
 					for (var key in schema.patternProperties) {

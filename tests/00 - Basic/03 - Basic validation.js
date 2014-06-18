@@ -22,7 +22,9 @@ describe('Basic validation', function () {
 				"foo": {"type": "string"}
 			}
 		};
-			
+
+		console.log(api.Generator().addSchema(schema, 'Demo').code());
+		
 		var classes = api.Generator().addSchema(schema, 'Demo').classes();
 		var Demo = classes.Demo;
 		
