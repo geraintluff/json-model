@@ -473,13 +473,26 @@
 			// Array constraints
 			if (!allowedType('array')) {
 				typeCode['array'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+			} else {
+				var arrayCode = '';
+				if ('maxItems' in schema) {
+					arrayCode += 'if (' + valueExpr + '.length > ' + JSON.stringify(schema.maxItems) + ') {\n';
+					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.maxItems) + '}, path:""}', true));
+					arrayCode += '}\n';
+				}
+				if (schema.minItems) {
+					arrayCode += 'if (' + valueExpr + '.length < ' + JSON.stringify(schema.minItems) + ') {\n';
+					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_SHORT) + ', params: {length: ' + valueExpr + '.length, minimum: ' + JSON.stringify(schema.minItems) + '}, path:""}', true));
+					arrayCode += '}\n';
+				}
+				typeCode['array'] += arrayCode;
 			}
 
 			if (!allowedType('object')) {
 				typeCode['object'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
 			} else {
-				typeCode['object'] += 'var objectErrors = [];';
-				for (var key in schema.properties) {
+				var objectCode = '';
+				Object.keys(schema.properties || {}).forEach(function (key) {
 					var propertyExpr = propertyExpression(valueExpr, key)
 					var subSchema = this.getFullSchema(schema.properties[key]);
 					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
@@ -493,8 +506,44 @@
 					if (!this.schemaRequiresProperty(schema, key)) {
 						checkCode = 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n' + indent(checkCode) + '}\n';
 					}
-					typeCode['object'] += checkCode;
+					objectCode += checkCode;
+				}.bind(this));
+				if (schema.patternProperties || 'additionalProperties' in schema) {
+					objectCode += 'var keys = Object.keys(' + valueExpr + ');\n';
+					objectCode += 'var knownKeys = {' + Object.keys(schema.properties).map(function (key) {
+						return JSON.stringify(key) + ': true';
+					}).join(', ') + '};\n';
+					objectCode += 'for (var i = 0; i < keys.length; i++) {\n';
+					objectCode += indent('var key = keys[i];\n');
+					if (schema.patternProperties && 'additionalProperties' in schema) {
+						objectCode += 'var matched = false;\n';
+					}
+					var propertyExpr = valueExpr + '[key]';
+					for (var key in schema.patternProperties) {
+						var regExpCode = (new RegExp(key)).toString();
+						var subSchema = this.getFullSchema(schema.patternProperties[key]);
+						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['patternProperties', key]);
+						objectCode += indent('if (' + regExpCode + '.test(key)) {\n');
+						objectCode += indent(indent(this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc)));
+						if ('additionalProperties' in schema) {
+							objectCode += indent(indent('matched = true;\n'));
+						}
+						objectCode += indent('}');
+					}
+					if (schema.patternProperties && 'additionalProperties' in schema) {
+						objectCode += indent('if (!matched && !knownKeys[key]) {\n');
+						if (!schema.additionalProperties) {
+							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {}, path:""}', true)));
+						} else if (typeof schema.additionalProperties === 'object') {
+							var subSchema = this.getFullSchema(schema.additionalProperties);
+							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalPRoperties']);
+							objectCode += indent(indent(this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc)));
+						}
+						objectCode += indent('}\n');
+					}
+					objectCode += '}\n';
 				}
+				typeCode['object'] += objectCode;
 			}
 
 			if (!allowedType('string')) {
