@@ -239,7 +239,8 @@
 			unicodeLength: config.unicodeLength !== false
 		};
 		this.classNames = {};
-		this.classVars = {GeneratedClass: true}; // make sure it won't be used as a variable name later
+		this.classVars = {GeneratedClass: true}; // it's our default superclass, so make sure it won't be used later
+		this.aliases = {};
 	};
 	Generator.prototype = {
 		addSchema: function (url, schema, name) {
@@ -251,9 +252,12 @@
 			url = url || (Math.random().toString().substring(2) + 'anonymous');
 			if (typeof schema === 'object') {
 				this.tv4.addSchema(url, schema);
+
+				if ('$ref' in schema) {
+					this.aliases[url] = schema.$ref;
+				}
 			} else if (!name) {
 				name = schema;
-				schema = {};
 			}
 			url = normUrl(url || '');
 			this.classNames[url] = name;
@@ -279,9 +283,23 @@
 					urls.push(url);
 				}
 			};
+			for (var url in this.aliases) {
+				appendUrl(url);
+			}
 			for (var i = 0; i < urls.length; i++) {
 				var url = urls[i];
+				if (url in this.aliases) {
+					appendUrl(this.aliases[url]);
+					continue;
+				}
 				code += '\n' + this.codeForUrl(url, appendUrl);
+			}
+			for (var url in this.aliases) {
+				var alias = this.aliases[url];
+				var urlName = this.classNameForUrl(url);
+				var aliasName = this.classNameForUrl(alias);
+				code += '\n/* $ref: ' + url.replace(/\*/g, '%2A') + ' -> ' + alias.replace(/\*/g, '%2A') + ' */\n';
+				code += propertyExpression('classes', urlName) + ' = ' + propertyExpression('classes', aliasName) + ';\n';
 			}
 			code += '\nreturn classes;\n';
 			code = 'function (superclass) {\n' + indent(code) + '}';
@@ -290,7 +308,7 @@
 		classVarForUrl: function (url, suffix) {
 			if (typeof suffix !== 'string') suffix = 'Class';
 			var varName = this.classNames[url] || url;
-			varName = varName.replace(/[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/g, function (match, nextChar) {
+			varName = varName.replace(/^[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/g, function (match, nextChar) {
 				return nextChar.toUpperCase();
 			});
 			varName = varName.replace(/^[^a-zA-Z]*/, '') || 'anonymous'; // strip leading zeros
@@ -313,7 +331,7 @@
 		extendUrl: function (url, components) {
 			if (url.indexOf('#') === -1) url += '#';
 			components.forEach(function (key) {
-				url += '/' + encodeURIComponent(key.replace(/~/g, '~0').replace(/\//g, '~1'));
+				url += '/' + encodeURIComponent(key.toString().replace(/~/g, '~0').replace(/\//g, '~1'));
 			});
 			return url;
 		},
@@ -339,6 +357,10 @@
 		},
 		codeForUrl: function (url, requireUrl) {
 			var schema = this.getFullSchema(this.tv4.getSchema(url));
+			if (!schema) {
+				throw new Error('Schema not found: ' + url);
+			}
+			url = schema.id || url;
 
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
 			
@@ -497,6 +519,36 @@
 					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_SHORT) + ', params: {length: ' + valueExpr + '.length, minimum: ' + JSON.stringify(schema.minItems) + '}, path:""}', true));
 					arrayCode += '}\n';
 				}
+				if (Array.isArray(schema.items)) {
+					schema.items.forEach(function (subSchema, index) {
+						var subSchema = this.getFullSchema(subSchema);
+						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items', index]);
+						var checkCode = this.validationCode(valueExpr + '[' + index + ']', subUrl, subSchema, requireUrl, errorFunc);
+						arrayCode += 'if (' + valueExpr + '.length >= ' + JSON.stringify(index) + ') {\n';
+						arrayCode += indent(checkCode);
+						arrayCode += '}\n';
+					}.bind(this));
+					if ('additionalItems' in schema) {
+						if (!schema.additionalItems) {
+							arrayCode += 'if (' + valueExpr + '.length > ' + JSON.stringify(schema.items.length) + ') {\n';
+							arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.items.length) + '}, path:""}', true));
+							arrayCode += '}\n';
+						} else {
+							var subSchema = this.getFullSchema(schema.additionalItems);
+							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalItems']);
+							var checkCode = this.validationCode(valueExpr + '[i]', subUrl, subSchema, requireUrl, errorFunc);
+							arrayCode += 'for (var i = ' + JSON.stringify(schema.items.length) + '; i < ' + valueExpr + '.length; i++) {\n';
+							arrayCode += indent(checkCode);
+							arrayCode += '}\n';
+						}
+					}
+				} else if (typeof schema.items === 'object') {
+					var subSchema = this.getFullSchema(schema.items);
+					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items']);
+					arrayCode += 'for (var i = 0; i < ' + valueExpr + '.length; i++) {\n';
+					arrayCode += indent(this.validationCode(valueExpr + '[i]', subUrl, subSchema, requireUrl, errorFunc));
+					arrayCode += '}\n';
+				}
 				typeCode['array'] += arrayCode;
 			}
 
@@ -538,9 +590,21 @@
 					}
 					objectCode += '}\n';
 				}.bind(this));
-				if (schema.patternProperties || 'additionalProperties' in schema) {
+				if (schema.patternProperties || 'additionalProperties' in schema || 'maxProperties' in schema || 'minProperties' in schema) {
 					objectCode += 'var keys = Object.keys(' + valueExpr + ');\n';
-					objectCode += 'var knownKeys = {' + Object.keys(schema.properties).map(function (key) {
+					if ('maxProperties' in schema) {
+						objectCode += 'if (keys.length > ' + JSON.stringify(schema.maxProperties) + ') {\n';
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MAXIMUM) + ', params: {propertyCount: keys.length, maximum: ' + JSON.stringify(schema.maxProperties) + '}, path:""}', true));
+						objectCode += '}\n';
+					}
+					if ('minProperties' in schema) {
+						objectCode += 'if (keys.length < ' + JSON.stringify(schema.minProperties) + ') {\n';
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MINIMUM) + ', params: {propertyCount: keys.length, minimum: ' + JSON.stringify(schema.minProperties) + '}, path:""}', true));
+						objectCode += '}\n';
+				 	}
+				}
+				if (schema.patternProperties || 'additionalProperties' in schema) {
+					objectCode += 'var knownKeys = {' + Object.keys(schema.properties || {}).map(function (key) {
 						return JSON.stringify(key) + ': true';
 					}).join(', ') + '};\n';
 					objectCode += 'for (var i = 0; i < keys.length; i++) {\n';
@@ -570,7 +634,7 @@
 							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {}, path:""}', true)));
 						} else if (typeof schema.additionalProperties === 'object') {
 							var subSchema = this.getFullSchema(schema.additionalProperties);
-							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalPRoperties']);
+							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalProperties']);
 							objectCode += indent(indent(this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc)));
 						}
 						objectCode += indent('}\n');
@@ -600,6 +664,12 @@
 					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_LONG) + ', params: {length: ' + lengthExpr + ', maximum: ' + JSON.stringify(schema.maxLength) + '}, path:""}', true));
 					stringCode += '}\n';
 				}
+				if (schema.pattern) {
+					var regExpCode = (new RegExp(schema.pattern)).toString();
+					stringCode += 'if (!' + regExpCode + '.test(' + valueExpr + ')) {\n';
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_PATTERN) + ', params: {pattern: ' + JSON.stringify(schema.pattern) + '}, path:""}', true));
+					stringCode += '}\n';
+				}
 				typeCode['string'] += stringCode;
 			}
 
@@ -607,17 +677,15 @@
 				typeCode['number'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
 			} else {
 				var numberCode = '';
-				var divisor = NaN;
-				if (!allowedType('number')) {
-					divisor = 1;
+				var divisor = schema.multipleOf || schema.divisibleBy;
+				if (!this.schemaAcceptsType(schema, 'number') && (isNaN(divisor) || divisor%1 !== 0)) {
+					numberCode += 'if (' + valueExpr + '%1 !== 0) {\n';
+					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true));
+					numberCode += '}';
 				}
-				if (!isNaN(divisor)) {
-					numberCode += 'if (' + valueExpr + '%' + JSON.stringify(divisor) + ' !== 0) {\n';
-					if (divisor === 1) {
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true));
-					} else {
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true));
-					}
+				if (schema.multipleOf || schema.divisibleBy) {
+					numberCode += 'if ((' + valueExpr + '/' + JSON.stringify(divisor) + ')%1 !== 0) {\n';
+					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true));
 					numberCode += '}\n';
 				}
 				if ('minimum' in schema) {
