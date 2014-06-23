@@ -22,6 +22,9 @@ describe('JSON Schema validation:', function () {
 				
 				test.tests.forEach(function (dataTest) {
 					var validation = TestClass.validate(dataTest.data);
+					if (dataTest.valid !== validation.valid) {
+						console.log(generator.code());
+					}
 					if (dataTest.valid) {
 						assert.isTrue(validation.valid, dataTest.description);
 					} else {

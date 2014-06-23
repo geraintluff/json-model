@@ -277,22 +277,22 @@
 			code += 'superclass = superclass || function GeneratedClass() {};\n';
 			code += 'request = request || function () {throw new Error("No web-request function provided");};\n';
 			code += 'var classes = {};\n';
-			var urls = Object.keys(this.classNames);
-			var appendUrl = function (url) {
-				if (urls.indexOf(url) === -1) {
+			var handledUrls = {};
+			var urls = Object.keys(this.aliases).concat(Object.keys(this.classNames));
+			var addCodeForUrl = function (url, immediate) {
+				if (handledUrls[url]) return;
+				if (url in this.aliases) {
+					return addCodeForUrl(this.aliases[url]);
+				}
+				if (immediate) {
+					handledUrls[url] = true;
+					code += '\n' + this.codeForUrl(url, addCodeForUrl);
+				} else {
 					urls.push(url);
 				}
-			};
-			for (var url in this.aliases) {
-				appendUrl(url);
-			}
+			}.bind(this);
 			for (var i = 0; i < urls.length; i++) {
-				var url = urls[i];
-				if (url in this.aliases) {
-					appendUrl(this.aliases[url]);
-					continue;
-				}
-				code += '\n' + this.codeForUrl(url, appendUrl);
+				addCodeForUrl(urls[i], true);
 			}
 			for (var url in this.aliases) {
 				var alias = this.aliases[url];
@@ -413,10 +413,12 @@
 					}
 				}
 				
-				body += '\nsuperclass.apply(this, arguments);\n';
+				var superclassExpr = 'superclass';
+				
+				body += '\n' + superclassExpr + '.apply(this, arguments);\n';
 				code += indent(body);
 				code += '};\n';
-				code += classExpression + '.prototype = Object.create(superclass.prototype);\n';
+				code += classExpression + '.prototype = Object.create(' + superclassExpr + '.prototype);\n';
 				code += classExpression + '.schemaUrl = ' + JSON.stringify(url) + ';\n';
 				if (schema.title) {
 					code += classExpression + '.title = ' + JSON.stringify(schema.title) + ';\n';
@@ -495,6 +497,16 @@
 				return errorFunc(classVar + '.validationErrors(' + valueExpr + ')');
 			}
 
+			var validation = '';
+			if (schema.allOf) {
+				schema.allOf.forEach(function (subSchema, index) {
+					var subSchema = this.getFullSchema(subSchema);
+					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['allOf', index]);
+					var checkCode = this.validationCode(valueExpr, subUrl, subSchema, requireUrl, errorFunc);
+					validation += checkCode;
+				}.bind(this));
+			}
+			
 			var typeCode = {
 				'array': '',
 				'object': '',
@@ -721,7 +733,6 @@
 				typeCode['null'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
 			}
 			
-			var validation = '';
 			validation += 'if (Array.isArray(' + valueExpr + ')) {\n';
 			validation += indent(typeCode['array']);
 			validation += '} else if (' + valueExpr + ' == null) {\n';
