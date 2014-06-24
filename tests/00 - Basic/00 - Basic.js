@@ -73,7 +73,7 @@ describe('Basic shape', function () {
 				"bar": {"type": "string"}
 			}
 		};
-		
+
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
 		var Demo = classes.Demo;
 		

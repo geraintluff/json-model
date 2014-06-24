@@ -376,41 +376,57 @@
 				if ('default' in schema) {
 					body += 'value = value || ' + JSON.stringify(schema['default']) + ';\n';
 				}
-				body += '\nvar keys = Object.keys(value);\n';
-				body += 'keys.forEach(function (key) {\n';
-				body += indent('this[key] = value[key];\n');
-				body += '}.bind(this));\n';
 				
-				// Defaults and property conversion
-				for (var key in schema.properties || {}) {
-					var subSchema = this.getFullSchema(schema.properties[key]);
-					if ('default' in subSchema) {
-						body += 'if (typeof ' + propertyExpression('this', key) + ' === "undefined") {\n';
-						body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
-						body += '}\n';
-					}
+				var castProperty = function(subSchema, subUrl, thisKeyExpr) {
 					if (this.schemaAcceptsType(subSchema, 'object')) {
-						var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
 						var subClassVar = this.classVarForUrl(subUrl);
 						requireUrl(subUrl);
 						var conditions = [];
 						if (this.schemaAcceptsType('null')) {
-							conditions.push(propertyExpression('this', key));
+							conditions.push(thisKeyExpr);
 						}
 						if (this.schemaAcceptsType('array')) {
-							conditions.push('!Array.isArray(' + propertyExpression('this', key) + ')');
+							conditions.push('!Array.isArray(' + thisKeyExpr + ')');
 						}
 						if (this.schemaOnlyAcceptsType(subSchema, 'object')) {
 							if (!this.schemaRequiresProperty(schema, key)) {
-								conditions.push(propertyExpression('this', key));
+								conditions.push(thisKeyExpr);
 							}
 						} else {
-							conditions.push('typeof ' + propertyExpression('this', key) + ' === "object"');
+							conditions.push('typeof ' + thisKeyExpr + ' === "object"');
 						}
 						body += 'if (' + conditions.join(' && ') + ') {\n';
-						body += indent('' + propertyExpression('this', key) + ' = new ' + subClassVar + '(' + propertyExpression('this', key) + ');\n');
+						body += indent('' + thisKeyExpr + ' = new ' + subClassVar + '(' + thisKeyExpr + ');\n');
 						body += '}\n';
 					}
+				}.bind(this);
+				
+				// Defaults and property conversion
+				for (var key in schema.properties || {}) {
+					var subSchema = this.getFullSchema(schema.properties[key]);
+					body += 'if (typeof ' + propertyExpression('value', key) + ' !== "undefined") {\n';
+					body += indent(propertyExpression('this', key) + ' = ' + propertyExpression('value', key) + ';\n');
+					if ('default' in subSchema) {
+						body += '} else {\n';
+						body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
+					}
+					body += '}\n';
+					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
+					castProperty(subSchema, subUrl, propertyExpression('this', key));
+				}
+				if (schema.additionalProperties) {
+					body += 'var keys = Object.keys(value);\n';
+					body += 'for (var i = 0; i < keys.length; i++) {\n';
+					body += indent('var key = keys[i];\n');
+					body += indent('if (!(key in this)) {\n');
+					body += indent(indent('this[key] = value[key];'));
+					if (typeof schema.additionalProperties === 'object') {
+						var subSchema = this.getFullSchema(schema.additionalProperties);
+						var subUrl = subSchema.id || this.extendUrl(url, ['additionalProperties']);
+						castProperty(subSchema, subUrl, propertyExpression('this[key]'));
+					}
+					body += indent('}\n');
+					body += '}\n';
 				}
 				
 				var superclassExpr = 'superclass';
