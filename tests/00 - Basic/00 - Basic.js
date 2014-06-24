@@ -77,9 +77,27 @@ describe('Basic shape', function () {
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
 		var Demo = classes.Demo;
 		
-		var demo = Demo({foo:1, bar:'baz'});
+		var demo = Demo({foo:1, bar:'baz', ignoredProperty:true});
 
 		assert.deepEqual(demo, {foo:1, bar:'baz'});
+	});
+
+	it('assigns additionalProperties', function () {
+		var schema = {
+			"type": "object",
+			"properties": {
+				"foo": {"type": "integer"},
+				"bar": {"type": "string"}
+			},
+			"additionalProperties": true
+		};
+
+		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
+		var Demo = classes.Demo;
+		
+		var demo = Demo({foo:1, bar:'baz', extraProperty:true});
+
+		assert.deepEqual(demo, {foo:1, bar:'baz', extraProperty:true});
 	});
 
 	it('uses defaults', function () {
