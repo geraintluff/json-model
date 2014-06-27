@@ -236,11 +236,14 @@
 		this.config = {
 			directMethods: config.directMethods !== false,
 			validation: config.validation !== false,
-			unicodeLength: config.unicodeLength !== false
+			unicodeLength: config.unicodeLength !== false,
+			assignment: config.assignment || false
 		};
 		this.classNames = {};
 		this.classVars = {GeneratedClass: true}; // it's our default superclass, so make sure it won't be used later
 		this.aliases = {};
+		this.missing = {};
+		this.previouslyHandled = {};
 	};
 	Generator.prototype = {
 		addSchema: function (url, schema, name) {
@@ -249,7 +252,7 @@
 				schema = url;
 				url = schema && schema.id;
 			}
-			url = url || (Math.random().toString().substring(2) + 'anonymous');
+			url = (typeof url === 'string') ? url : (Math.random().toString().substring(2) + 'anonymous');
 			if (typeof schema === 'object') {
 				this.tv4.addSchema(url, schema);
 
@@ -269,14 +272,26 @@
 		},
 		code: function () {
 			var code = '';
+			code += 'function pointerEscape(key) {\n';
+			code += indent('return key.replace(/~/g, "~0").replace(/\\//g, "~1");\n');
+			code += '}\n';
 			if (this.config.unicodeLength) {
 				code += 'function unicodeLength(string) {\n';
 				code += indent('return string.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "_").length;\n');
 				code += '}\n';
 			}
+			code += 'if (superclass && typeof superclass === "object") {\n';
+			code += indent('request = classes;\n');
+			code += indent('classes = superclass;\n');
+			code += indent('superclass = null;\n');
+			code += '}\n';
 			code += 'superclass = superclass || function GeneratedClass() {};\n';
-			code += 'request = request || function () {throw new Error("No web-request function provided");};\n';
-			code += 'var classes = {};\n';
+			code += 'if (typeof classes === "function") {\n';
+			code += indent('request = classes;\n');
+			code += indent('classes = null;\n');
+			code += '}\n';
+			code += 'request = request || function ErrorFunc() {throw new Error("No web-request function provided");};\n';
+			code += 'classes = classes || {};\n';
 			var handledUrls = {};
 			var urls = Object.keys(this.aliases).concat(Object.keys(this.classNames));
 			var addCodeForUrl = function (url, immediate) {
@@ -292,7 +307,9 @@
 				}
 			}.bind(this);
 			for (var i = 0; i < urls.length; i++) {
-				addCodeForUrl(urls[i], true);
+				if (!this.previouslyHandled[urls[i]]) {
+					addCodeForUrl(urls[i], true);
+				}
 			}
 			for (var url in this.aliases) {
 				var alias = this.aliases[url];
@@ -302,8 +319,11 @@
 				code += propertyExpression('classes', urlName) + ' = ' + propertyExpression('classes', aliasName) + ';\n';
 			}
 			code += '\nreturn classes;\n';
-			code = 'function (superclass) {\n' + indent(code) + '}';
+			code = 'function (superclass, classes, request) {\n' + indent(code) + '}';
 			return code;
+		},
+		classExprForUrl: function (url) {
+			return 'classes[' + JSON.stringify(this.classNameForUrl(url)) + ']';
 		},
 		classVarForUrl: function (url, suffix) {
 			if (typeof suffix !== 'string') suffix = 'Class';
@@ -352,15 +372,23 @@
 			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
 			haltUrls[refUrl] = true;
 			var schema = this.tv4.getSchema(refUrl);
+			if (!schema) {
+				this.missing[refUrl] = true;
+				return {"description": "Missing schema: " + refUrl, placeholder: true};
+			}
 			if (!schema.id) schema.id = normUrl(refUrl);
 			return this.getFullSchema(schema, haltUrls);
 		},
 		codeForUrl: function (url, requireUrl) {
 			var schema = this.getFullSchema(this.tv4.getSchema(url));
 			if (!schema) {
-				throw new Error('Schema not found: ' + url);
+				this.missing[url] = true;
+				schema = {"description": "Missing schema: " + url};
+			} else {
+				this.previouslyHandled[url] = true;
+				url = schema.id || url;
+				this.previouslyHandled[url] = true;
 			}
-			url = schema.id || url;
 
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
 			
@@ -379,7 +407,7 @@
 				
 				var castProperty = function(subSchema, subUrl, thisKeyExpr) {
 					if (this.schemaAcceptsType(subSchema, 'object')) {
-						var subClassVar = this.classVarForUrl(subUrl);
+						var subClassVar = this.classExprForUrl(subUrl);
 						requireUrl(subUrl);
 						var conditions = [];
 						if (this.schemaAcceptsType('null')) {
@@ -419,7 +447,7 @@
 					body += 'for (var i = 0; i < keys.length; i++) {\n';
 					body += indent('var key = keys[i];\n');
 					body += indent('if (!(key in this)) {\n');
-					body += indent(indent('this[key] = value[key];'));
+					body += indent(indent('this[key] = value[key];\n'));
 					if (typeof schema.additionalProperties === 'object') {
 						var subSchema = this.getFullSchema(schema.additionalProperties);
 						var subUrl = subSchema.id || this.extendUrl(url, ['additionalProperties']);
@@ -487,38 +515,73 @@
 				}
 			}.bind(this));
 			if (this.config.validation) {
-				code += classExpression + '.validationErrors = function (value) {\n';
+				if (this.config.assignment) {
+					code += classExpression + '.validationErrors = function (value, dataPath, schemaMap) {\n';
+					code += indent('schemaMap = schemaMap || {};\n');
+				} else {
+					code += classExpression + '.validationErrors = function (value, dataPath) {\n';
+				}
+				code += indent('dataPath = dataPath || "";\n');
 				code += indent('var errors = [];\n');
-				code += indent(this.validationCode('value', url, schema, requireUrl, function (errorExpr, single) {
+				code += indent(this.validationCode('value', [], url, schema, requireUrl, function (errorExpr, single) {
 					if (single) return 'errors.push(' + errorExpr + ');\n';
 					return 'errors = errors.concat(' + errorExpr + ');\n'
 				}, true));
 				code += indent('return errors;\n');
 				code += '}\n';
 				code += classExpression + '.validate = function (value) {\n';
-				code += indent('var errors = ' + classExpression + '.validationErrors(value);\n');
-				code += indent('return errors.length ? {valid: false, errors: errors} : {valid: true};\n');
+				if (this.config.assignment) {
+					code += indent('var schemaMap = {};\n');
+					code += indent('var errors = ' + classExpression + '.validationErrors(value, "", schemaMap);\n');
+					code += indent('return errors.length ? {valid: false, errors: errors, schemas: schemaMap} : {valid: true, schemas: schemaMap};\n');
+				} else {
+					code += indent('var errors = ' + classExpression + '.validationErrors(value);\n');
+					code += indent('return errors.length ? {valid: false, errors: errors} : {valid: true};\n');
+				}
 				code += '}\n';
 			}
 			return code;
 		},
-		validationCode: function (valueExpr, schemaUrl, schema, requireUrl, errorFunc, noReference) {
+		validationCode: function (valueExpr, dataPathExprs, schemaUrl, schema, requireUrl, errorFunc, noReference) {
 			var allowedTypes = schema.type || ['null', 'boolean', 'number', 'string', 'object', 'array'];
 			if (!Array.isArray(allowedTypes)) allowedTypes = [allowedTypes];
 			var allowedType = function (type) {return allowedTypes.indexOf(type) !== -1;};
 
+			var dataPathExpr = 'dataPath';
+			for (var i = 0; i < dataPathExprs.length; i++) {
+				var part = dataPathExprs[i];
+				if (part[0] === '"' && dataPathExpr[dataPathExpr.length - 1] == '"') {
+					dataPathExpr = dataPathExpr.substring(0, dataPathExpr.length - 1) + part.substring(1);
+				} else {
+					dataPathExpr += ' + ' + part;
+				}
+			}
+
 			if (!noReference && this.schemaAcceptsType(schema, 'object')) {
-				var classVar = this.classVarForUrl(schemaUrl);
+				var classVar = this.classExprForUrl(schemaUrl);
 				requireUrl(schemaUrl);
-				return errorFunc(classVar + '.validationErrors(' + valueExpr + ')');
+				if (this.config.assignment) {
+					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ', schemaMap)');
+				} else {
+					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ')');
+				}
 			}
 
 			var validation = '';
+			
+			if (this.config.assignment) {
+				validation += 'if (!schemaMap[' + dataPathExpr + ']) {\n';
+				validation += indent('schemaMap[' + dataPathExpr + '] = [' + JSON.stringify(schemaUrl) + '];\n');
+				validation += '} else {\n';
+				validation += indent('schemaMap[' + dataPathExpr + '].push(' + JSON.stringify(schemaUrl) + ');\n');
+				validation += '}\n';
+			}
+
 			if (schema.allOf) {
 				schema.allOf.forEach(function (subSchema, index) {
 					var subSchema = this.getFullSchema(subSchema);
 					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['allOf', index]);
-					var checkCode = this.validationCode(valueExpr, subUrl, subSchema, requireUrl, errorFunc);
+					var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
 					validation += checkCode;
 				}.bind(this));
 			}
@@ -534,24 +597,24 @@
 
 			// Array constraints
 			if (!this.schemaAcceptsType(schema, 'array')) {
-				typeCode['array'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['array'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "array", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path: ' + dataPathExpr + '}', true);
 			} else {
 				var arrayCode = '';
 				if ('maxItems' in schema) {
 					arrayCode += 'if (' + valueExpr + '.length > ' + JSON.stringify(schema.maxItems) + ') {\n';
-					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.maxItems) + '}, path:""}', true));
+					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.maxItems) + '}, path:' + dataPathExpr + '}', true));
 					arrayCode += '}\n';
 				}
 				if (schema.minItems) {
 					arrayCode += 'if (' + valueExpr + '.length < ' + JSON.stringify(schema.minItems) + ') {\n';
-					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_SHORT) + ', params: {length: ' + valueExpr + '.length, minimum: ' + JSON.stringify(schema.minItems) + '}, path:""}', true));
+					arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_SHORT) + ', params: {length: ' + valueExpr + '.length, minimum: ' + JSON.stringify(schema.minItems) + '}, path:' + dataPathExpr + '}', true));
 					arrayCode += '}\n';
 				}
 				if (Array.isArray(schema.items)) {
 					schema.items.forEach(function (subSchema, index) {
 						var subSchema = this.getFullSchema(subSchema);
 						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items', index]);
-						var checkCode = this.validationCode(valueExpr + '[' + index + ']', subUrl, subSchema, requireUrl, errorFunc);
+						var checkCode = this.validationCode(valueExpr + '[' + index + ']', dataPathExprs.concat(['"/0"']), subUrl, subSchema, requireUrl, errorFunc);
 						arrayCode += 'if (' + valueExpr + '.length >= ' + JSON.stringify(index) + ') {\n';
 						arrayCode += indent(checkCode);
 						arrayCode += '}\n';
@@ -559,12 +622,12 @@
 					if ('additionalItems' in schema) {
 						if (!schema.additionalItems) {
 							arrayCode += 'if (' + valueExpr + '.length > ' + JSON.stringify(schema.items.length) + ') {\n';
-							arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.items.length) + '}, path:""}', true));
+							arrayCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ARRAY_LENGTH_LONG) + ', params: {length: ' + valueExpr + '.length, maximum: ' + JSON.stringify(schema.items.length) + '}, path:' + dataPathExpr + '}', true));
 							arrayCode += '}\n';
 						} else {
 							var subSchema = this.getFullSchema(schema.additionalItems);
 							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalItems']);
-							var checkCode = this.validationCode(valueExpr + '[i]', subUrl, subSchema, requireUrl, errorFunc);
+							var checkCode = this.validationCode(valueExpr + '[i]', dataPathExprs.concat(['"/"', 'i']), subUrl, subSchema, requireUrl, errorFunc);
 							arrayCode += 'for (var i = ' + JSON.stringify(schema.items.length) + '; i < ' + valueExpr + '.length; i++) {\n';
 							arrayCode += indent(checkCode);
 							arrayCode += '}\n';
@@ -574,14 +637,14 @@
 					var subSchema = this.getFullSchema(schema.items);
 					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items']);
 					arrayCode += 'for (var i = 0; i < ' + valueExpr + '.length; i++) {\n';
-					arrayCode += indent(this.validationCode(valueExpr + '[i]', subUrl, subSchema, requireUrl, errorFunc));
+					arrayCode += indent(this.validationCode(valueExpr + '[i]', dataPathExprs.concat(['"/"', 'i']), subUrl, subSchema, requireUrl, errorFunc));
 					arrayCode += '}\n';
 				}
 				typeCode['array'] += arrayCode;
 			}
 
 			if (!allowedType('object')) {
-				typeCode['object'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['object'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:' + dataPathExpr + '}', true);
 			} else {
 				var objectCode = '';
 				var doneKeys = {};
@@ -594,27 +657,27 @@
 					if (schema.properties && schema.properties[key]) {
 						var subSchema = this.getFullSchema(schema.properties[key]);
 						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
-						checkCode += this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc);
+						checkCode += this.validationCode(propertyExpr, dataPathExprs.concat([JSON.stringify('/' + key.replace(/~/g, '~0').replace(/\//g, '~1'))]), subUrl, subSchema, requireUrl, errorFunc);
 					}
 					if (schema.dependencies && key in schema.dependencies) {
 						if (Array.isArray(schema.dependencies[key]) || typeof schema.dependencies[key] === 'string') {
 							var depKeys = Array.isArray(schema.dependencies[key]) ? schema.dependencies[key] : [schema.dependencies[key]];
 							depKeys.forEach(function (dependency) {
 								checkCode += 'if (!(' + JSON.stringify(dependency) + ' in ' + valueExpr + ')) {\n';
-								checkCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_DEPENDENCY_KEY) + ', params: {key: ' + JSON.stringify(key) + ', missing: ' + JSON.stringify(dependency) + '}, path:""}', true));
+								checkCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_DEPENDENCY_KEY) + ', params: {key: ' + JSON.stringify(key) + ', missing: ' + JSON.stringify(dependency) + '}, path:' + dataPathExpr + '}', true));
 								checkCode += '}\n';
 							});
 						} else {
 							var subSchema = this.getFullSchema(schema.dependencies[key]);
 							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['dependencies', key]);
-							checkCode += this.validationCode(valueExpr, subUrl, subSchema, requireUrl, errorFunc);
+							checkCode += this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
 						}
 					}
 					objectCode += 'if (' + JSON.stringify(key) + ' in ' + valueExpr + ') {\n';
 					objectCode += indent(checkCode);
 					if (this.schemaRequiresProperty(schema, key)) {
 						objectCode += '} else {\n';
-						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_REQUIRED) + ', params: {key: ' + JSON.stringify(key) + '}, path:""}', true));
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_REQUIRED) + ', params: {key: ' + JSON.stringify(key) + '}, path:' + dataPathExpr + '}', true));
 					}
 					objectCode += '}\n';
 				}.bind(this));
@@ -622,12 +685,12 @@
 					objectCode += 'var keys = Object.keys(' + valueExpr + ');\n';
 					if ('maxProperties' in schema) {
 						objectCode += 'if (keys.length > ' + JSON.stringify(schema.maxProperties) + ') {\n';
-						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MAXIMUM) + ', params: {propertyCount: keys.length, maximum: ' + JSON.stringify(schema.maxProperties) + '}, path:""}', true));
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MAXIMUM) + ', params: {propertyCount: keys.length, maximum: ' + JSON.stringify(schema.maxProperties) + '}, path:' + dataPathExpr + '}', true));
 						objectCode += '}\n';
 					}
 					if ('minProperties' in schema) {
 						objectCode += 'if (keys.length < ' + JSON.stringify(schema.minProperties) + ') {\n';
-						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MINIMUM) + ', params: {propertyCount: keys.length, minimum: ' + JSON.stringify(schema.minProperties) + '}, path:""}', true));
+						objectCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_PROPERTIES_MINIMUM) + ', params: {propertyCount: keys.length, minimum: ' + JSON.stringify(schema.minProperties) + '}, path:' + dataPathExpr + '}', true));
 						objectCode += '}\n';
 				 	}
 				}
@@ -646,7 +709,7 @@
 						var subSchema = this.getFullSchema(schema.patternProperties[key]);
 						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['patternProperties', key]);
 						objectCode += indent('if (' + regExpCode + '.test(key)) {\n');
-						objectCode += indent(indent(this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc)));
+						objectCode += indent(indent(this.validationCode(propertyExpr, dataPathExprs.concat(['"/"', 'pointerEscape(key)']), subUrl, subSchema, requireUrl, errorFunc)));
 						if ('additionalProperties' in schema) {
 							objectCode += indent(indent('matched = true;\n'));
 						}
@@ -659,11 +722,11 @@
 							objectCode += indent('if (!knownKeys[key]) {\n');
 						}
 						if (!schema.additionalProperties) {
-							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {}, path:""}', true)));
+							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {key: key}, path:' + dataPathExpr + '}', true)));
 						} else if (typeof schema.additionalProperties === 'object') {
 							var subSchema = this.getFullSchema(schema.additionalProperties);
 							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalProperties']);
-							objectCode += indent(indent(this.validationCode(propertyExpr, subUrl, subSchema, requireUrl, errorFunc)));
+							objectCode += indent(indent(this.validationCode(propertyExpr, dataPathExprs.concat(['"/"', 'pointerEscape(key)']), subUrl, subSchema, requireUrl, errorFunc)));
 						}
 						objectCode += indent('}\n');
 					}
@@ -674,7 +737,7 @@
 
 			if (!allowedType('string')) {
 				// Although we'll know it's a string at this point in the code, we use "typeof" instead so it can be grouped
-				typeCode['string'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['string'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:' + dataPathExpr + '}', true);
 			} else {
 				var stringCode = '';
 				var lengthExpr = valueExpr + '.length';
@@ -684,57 +747,57 @@
 				}
 				if (schema.minLength) {
 					stringCode += 'if (' + lengthExpr + ' < ' + JSON.stringify(schema.minLength) + ') {\n';
-					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_SHORT) + ', params: {length: ' + lengthExpr + ', minimum: ' + JSON.stringify(schema.minLength) + '}, path:""}', true));
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_SHORT) + ', params: {length: ' + lengthExpr + ', minimum: ' + JSON.stringify(schema.minLength) + '}, path:' + dataPathExpr + '}', true));
 					stringCode += '}\n';
 				}
 				if ('maxLength' in schema) {
 					stringCode += 'if (' + lengthExpr + ' > ' + JSON.stringify(schema.maxLength) + ') {\n';
-					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_LONG) + ', params: {length: ' + lengthExpr + ', maximum: ' + JSON.stringify(schema.maxLength) + '}, path:""}', true));
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_LENGTH_LONG) + ', params: {length: ' + lengthExpr + ', maximum: ' + JSON.stringify(schema.maxLength) + '}, path:' + dataPathExpr + '}', true));
 					stringCode += '}\n';
 				}
 				if (schema.pattern) {
 					var regExpCode = (new RegExp(schema.pattern)).toString();
 					stringCode += 'if (!' + regExpCode + '.test(' + valueExpr + ')) {\n';
-					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_PATTERN) + ', params: {pattern: ' + JSON.stringify(schema.pattern) + '}, path:""}', true));
+					stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_PATTERN) + ', params: {pattern: ' + JSON.stringify(schema.pattern) + '}, path:' + dataPathExpr + '}', true));
 					stringCode += '}\n';
 				}
 				typeCode['string'] += stringCode;
 			}
 
 			if (!allowedType('number') && !allowedType('integer')) {
-				typeCode['number'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['number'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:' + dataPathExpr + '}', true);
 			} else {
 				var numberCode = '';
 				var divisor = schema.multipleOf || schema.divisibleBy;
 				if (!this.schemaAcceptsType(schema, 'number') && (isNaN(divisor) || divisor%1 !== 0)) {
 					numberCode += 'if (' + valueExpr + '%1 !== 0) {\n';
-					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:""}', true));
+					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:' + dataPathExpr + '}', true));
 					numberCode += '}';
 				}
 				if (schema.multipleOf || schema.divisibleBy) {
 					numberCode += 'if ((' + valueExpr + '/' + JSON.stringify(divisor) + ')%1 !== 0) {\n';
-					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:""}', true));
+					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MULTIPLE_OF) + ', params: {multipleOf: ' + JSON.stringify(divisor) + '}, path:' + dataPathExpr + '}', true));
 					numberCode += '}\n';
 				}
 				if ('minimum' in schema) {
 					if (schema.exclusiveMinimum) {
 						numberCode += 'if (' + valueExpr + ' <= ' + JSON.stringify(schema.minimum) + ') {\n';
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:""}', true));
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:' + dataPathExpr + '}', true));
 						numberCode += '}\n';
 					} else {
 						numberCode += 'if (' + valueExpr + ' < ' + JSON.stringify(schema.minimum) + ') {\n';
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:""}', true));
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MINIMUM) + ', params: {value: ' + valueExpr + ', minimum: ' + JSON.stringify(schema.minimum) + '}, path:' + dataPathExpr + '}', true));
 						numberCode += '}\n';
 					}
 				}
 				if ('maximum' in schema) {
 					if (schema.exclusiveMaximum) {
 						numberCode += 'if (' + valueExpr + ' >= ' + JSON.stringify(schema.maximum) + ') {\n';
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:""}', true));
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM_EXCLUSIVE) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:' + dataPathExpr + '}', true));
 						numberCode += '}\n';
 					} else {
 						numberCode += 'if (' + valueExpr + ' > ' + JSON.stringify(schema.maximum) + ') {\n';
-						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:""}', true));
+						numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.NUMBER_MAXIMUM) + ', params: {value: ' + valueExpr + ', maximum: ' + JSON.stringify(schema.maximum) + '}, path:' + dataPathExpr + '}', true));
 						numberCode += '}\n';
 					}
 				}
@@ -742,11 +805,11 @@
 			}
 
 			if (!allowedType('boolean')) {
-				typeCode['boolean'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['boolean'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: typeof ' + valueExpr + ', expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:' + dataPathExpr + '}', true);
 			}
 			
 			if (!allowedType('null')) {
-				typeCode['null'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:""}', true);
+				typeCode['null'] += errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "null", expected: ' + JSON.stringify(allowedTypes.join(', ')) + '}, path:' + dataPathExpr + '}', true);
 			}
 			
 			validation += 'if (Array.isArray(' + valueExpr + ')) {\n';
@@ -787,8 +850,8 @@
 		},
 		classes: function (superclass, request) {
 			var code = this.code();
-			var func = new Function('superclass', 'request', 'return ' + code + '(superclass, request)');
-			return func(superclass, request);
+			var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
+			return this._classes = func(superclass, this._classes, request);
 		}
 	};
 	

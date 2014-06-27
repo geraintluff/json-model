@@ -12,7 +12,6 @@ describe('Interlinking', function () {
 		};
 		
 		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
-		console.log(api.Generator().addSchema('/demo', schema, 'Demo').code());
 		var Demo = classes.Demo;
 		var DemoPropertiesBar = classes.DemoPropertiesBar;
 
