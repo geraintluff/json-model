@@ -309,6 +309,7 @@
 		}
 		var validatorFunctions = [];
 		var shouldRegenerate = false;
+		if (typeof schemas === 'string') schemas = [schemas];
 		(schemas || []).forEach(function (schemaUrl) {
 			generator.addSchema(schemaUrl);
 			var name = generator.classNameForUrl(schemaUrl);
