@@ -237,7 +237,8 @@
 			directMethods: config.directMethods !== false,
 			validation: config.validation !== false,
 			unicodeLength: config.unicodeLength !== false,
-			assignment: config.assignment || false
+			assignment: config.assignment || false,
+			classes: (config.classes !== false) && true
 		};
 		this.classNames = {};
 		this.classVars = {GeneratedClass: true}; // it's our default superclass, so make sure it won't be used later
@@ -396,7 +397,7 @@
 			
 			var classKey = this.classNameForUrl(url);
 			var classExpression = this.classVarForUrl(url || 'anonymous');
-			if (!this.schemaAcceptsType(schema, 'object')) {
+			if (!this.schemaAcceptsType(schema, 'object') || this.config.classes === false) {
 				// Validation and links only
 				code += 'var ' + classExpression + ' = ' + propertyExpression('classes', classKey) + ' = {};\n';
 			} else {
@@ -586,6 +587,39 @@
 					var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
 					validation += checkCode;
 				}.bind(this));
+			}
+
+			if (schema.anyOf) {
+				if (this.config.assignment) {
+					validation += 'var actualSchemaMap = schemaMap, actualErrors = errors, passCount = 0;\n';
+				} else {
+					validation += 'var actualErrors = errors, passCount = 0;\n';
+				}
+				schema.anyOf.forEach(function (subSchema, index) {
+					validation += 'errors = [];\n'
+					if (this.config.assignment) {
+						validation += 'schemaMap = {};\n';
+					}
+					var subSchema = this.getFullSchema(subSchema);
+					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['anyOf', index]);
+					var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
+					validation += checkCode;
+					validation += 'if (!errors.length) {\n';
+					if (this.config.assignment) {
+						validation += indent('for (var key in schemaMap) {\n');
+						validation += indent(indent('actualSchemaMap[key] = (actualSchemaMap[key] || []).concat(schemaMap[key])\n'));
+						validation += indent('}\n');
+					}
+					validation += indent('passCount++;\n');
+					validation += '}\n';
+				}.bind(this));
+				if (this.config.assignment) {
+					validation += 'schemaMap = actualSchemaMap;\n';
+				}
+				validation += 'errors = actualErrors;\n';
+				validation += 'if (!passCount) {\n';
+				validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
+				validation += '}\n';
 			}
 			
 			var typeCode = {

@@ -92,7 +92,7 @@
 		throw new Error('Requests not supported');
 	}
 	
-	var generator = api.generator = new schema2js.Generator({assignment: true});
+	var generator = api.generator = new schema2js.Generator({model: false, assignment: true});
 	var generatedClasses = generator.classes(null, requestFunction);
 	api.tv4 = generator.tv4;
 	api.EventEmitter = EventEmitter;

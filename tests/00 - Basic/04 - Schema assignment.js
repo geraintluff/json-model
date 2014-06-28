@@ -91,4 +91,24 @@ describe('Schema assignment', function () {
 		assert.include(validation.schemas['/foo/1'], '#/definitions/items');
 		assert.include(validation.schemas['/foo/2'], '#/definitions/items');
 	});
+
+	it('assigns anyOf', function () {
+		var schema = {
+			anyOf: [
+				{"type": "string"},
+				{"type": "number"},
+				{"type": "integer"}
+			]
+		};
+
+		var classes = api.Generator({assignment: true}).addSchema('', schema, 'Demo').classes();
+		var Demo = classes.Demo;
+
+		var validation = Demo.validate(123);
+		
+		assert.isObject(validation.schemas);
+		assert.include(validation.schemas[''], '');
+		assert.include(validation.schemas[''], '#/anyOf/1');
+		assert.include(validation.schemas[''], '#/anyOf/2');
+	});
 });
