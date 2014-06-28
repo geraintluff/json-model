@@ -53,4 +53,14 @@ describe('Model', function () {
 		
 		assert.deepEqual(JSON.stringify(model), JSON.stringify(model.get()));
 	});
+
+	it('api.extend()', function () {
+		var model = api.create({foo: 'hello'});
+		
+		api.extend({
+			foo: function () {return 'bar';}
+		});
+		
+		assert.equal(model.foo(), 'bar');
+	});
 });

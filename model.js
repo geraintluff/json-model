@@ -369,6 +369,11 @@
 		}
 		return result;
 	};
+	api.extend = function (obj) {
+		Object.keys(obj).forEach(function (key) {
+			Model.prototype[key] = obj[key];
+		});
+	};
 	
 	return api;
 });
