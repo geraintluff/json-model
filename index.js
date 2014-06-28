@@ -247,6 +247,7 @@
 	};
 	Generator.prototype = {
 		addSchema: function (url, schema, name) {
+			delete this._code;
 			if (typeof url === 'object') {
 				name = schema;
 				schema = url;
@@ -263,7 +264,7 @@
 				name = schema;
 			}
 			url = normUrl(url || '');
-			this.classNames[url] = name;
+			this.classNames[url] = name || this.classNames[url] || "";
 			this.classVarForUrl(url); // reserves an appropriate variable name
 			return this;
 		},
@@ -271,6 +272,7 @@
 			return this.tv4.getMissingUris();
 		},
 		code: function () {
+			if (this._code) return this._code;
 			var code = '';
 			code += 'function pointerEscape(key) {\n';
 			code += indent('return key.replace(/~/g, "~0").replace(/\\//g, "~1");\n');
@@ -320,10 +322,10 @@
 			}
 			code += '\nreturn classes;\n';
 			code = 'function (superclass, classes, request) {\n' + indent(code) + '}';
-			return code;
+			return this._code = code;
 		},
 		classExprForUrl: function (url) {
-			return 'classes[' + JSON.stringify(this.classNameForUrl(url)) + ']';
+			return propertyExpression('classes', this.classNameForUrl(url))
 		},
 		classVarForUrl: function (url, suffix) {
 			if (typeof suffix !== 'string') suffix = 'Class';
@@ -850,6 +852,7 @@
 		},
 		classes: function (superclass, request) {
 			var code = this.code();
+			delete this._code;
 			var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
 			return this._classes = func(superclass, this._classes, request);
 		}
