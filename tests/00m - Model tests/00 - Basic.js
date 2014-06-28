@@ -24,6 +24,12 @@ describe('Model', function () {
 		assert.deepEqual(model.length(), 3);
 		assert.deepEqual(model.get(1), model.item(1).get());
 	});
+
+	it('has path()', function () {
+		var model = api.create([0, 1, 2]);
+		
+		assert.equal(model.path('/0'), model.item(0));
+	});
 	
 	it('schemas', function () {
 		var schemaUrl = '/schemas/test' + Math.random();

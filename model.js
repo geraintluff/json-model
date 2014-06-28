@@ -129,6 +129,14 @@
 			}
 			return this._root.setPathValue(this._path + pathSpec, value);
 		},
+		path: function (pathSpec) {
+			if (pathSpec == null) pathSpec = "";
+			pathSpec = pathSpec + "";
+			if (pathSpec && pathSpec.charAt(0) !== "/") {
+				pathSpec = "/" + pointerEscape(pathSpec);
+			}
+			return this._root.modelForPath(this._path + pathSpec);
+		},
 		length: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (Array.isArray(value)) return value.length;
