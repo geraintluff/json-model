@@ -110,10 +110,11 @@
 	}
 	Model.prototype = {
 		get: function (pathSpec) {
+			if (pathSpec == null) pathSpec = "";
+			pathSpec = pathSpec + "";
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			pathSpec = pathSpec || "";
 			return this._root.getPathValue(this._path + pathSpec);
 		},
 		set: function (pathSpec, value) {
@@ -121,20 +122,35 @@
 				value = pathSpec;
 				pathSpec = "";
 			}
+			if (pathSpec == null) pathSpec = "";
+			pathSpec = pathSpec + "";
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			pathSpec = pathSpec || "";
 			return this._root.setPathValue(this._path + pathSpec, value);
+		},
+		length: function (pathSpec) {
+			var value = this.get(pathSpec);
+			if (Array.isArray(value)) return value.length;
+			return 0;
+		},
+		item: function (index) {
+			return this._root.modelForPath(this._path + '/' + pointerEscape(index + ''));
+		},
+		keys: function (pathSpec) {
+			var value = this.get(pathSpec);
+			if (!value || Array.isArray(value) || typeof value !== 'object') return [];
+			return Object.keys(value);
 		},
 		prop: function (key) {
 			return this._root.modelForPath(this._path + '/' + pointerEscape(key + ''));
 		},
 		schemas: function (pathSpec) {
+			if (pathSpec == null) pathSpec = "";
+			pathSpec = pathSpec + "";
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			pathSpec = pathSpec || "";
 			return this._root.getPathSchemas(this._path + pathSpec);
 		}
 	};

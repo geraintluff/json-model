@@ -11,8 +11,18 @@ describe('Model', function () {
 		assert.deepEqual(model.get('foo'), 'baz');
 	});
 	
-	it('has prop()', function () {
+	it('has prop(), keys()', function () {
+		var model = api.create({foo:'bar'});
 		
+		assert.deepEqual(model.keys(), ['foo']);
+		assert.deepEqual(model.get('foo'), model.prop('foo').get());
+	});
+
+	it('has item(), length()', function () {
+		var model = api.create([0, 1, 2]);
+		
+		assert.deepEqual(model.length(), 3);
+		assert.deepEqual(model.get(1), model.item(1).get());
 	});
 	
 	it('schemas', function () {
