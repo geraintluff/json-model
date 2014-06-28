@@ -116,7 +116,7 @@
 
 	function RootModel(initialValue, validatorFunctions) {
 		var value;
-		var schemaMap;
+		var schemaMap = {};
 		
 		var models = {c: {}};
 		this.modelForPath = function (path) {
@@ -148,7 +148,7 @@
 			}
 			
 			// Recalculate schemas (from scratch for now - we'll recalculate later!)
-			var oldSchemaMap = {};
+			var oldSchemaMap = schemaMap;
 			schemaMap = {};
 			for (var i = 0; i < validatorFunctions.length; i++) {
 				validatorFunctions[i](value, "", schemaMap);
@@ -174,7 +174,7 @@
 						modelSet.m.emit('schemachange', added, removed);
 					}
 					for (var key in modelSet.c) {
-						if (ignoreKey !== null && key !== ignoreKey) {
+						if (ignoreKey === null || key !== ignoreKey) {
 							checkSchemaChanges(path + "/" + pointerEscape(key), modelSet.c[key], null);
 						}
 					}
