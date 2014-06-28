@@ -290,6 +290,9 @@
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
 			return this._root.getPathSchemas(this._path + pathSpec);
+		},
+		toJSON: function () {
+			return this.get();
 		}
 	};
 	EventEmitter.addMethods(Model.prototype);

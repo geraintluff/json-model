@@ -47,4 +47,10 @@ describe('Model', function () {
 		assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo']);
 		assert.deepEqual(model.schemas('foo'), model.prop('foo').schemas());
 	});
+
+	it('toJSON()', function () {
+		var model = api.create({foo: 'hello'});
+		
+		assert.deepEqual(JSON.stringify(model), JSON.stringify(model.get()));
+	});
 });
