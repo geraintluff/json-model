@@ -88,16 +88,19 @@
 	
 	var api = {};
 	
+	var suppliedRequestFunction = function () {throw new Error('Requests not supported');};
 	function requestFunction(params, callback) {
-		throw new Error('Requests not supported');
+		return suppliedRequestFunction(params, callback);
 	}
 	
-	var generator = api.generator = new schema2js.Generator({model: false, assignment: true});
+	var generator = api.generator = new schema2js.Generator({classes: false, assignment: true});
 	var generatedClasses = generator.classes(null, requestFunction);
 	api.tv4 = generator.tv4;
 	api.EventEmitter = EventEmitter;
 	
-	api.requestFunction = null;
+	api.setRequestFunction = function (func) {
+		suppliedRequestFunction = func;
+	};
 	
 	function resolvePointer(path, valueTarget) {
 		var pathParts = path.split('/').slice(1).map(pointerUnescape);
@@ -297,6 +300,32 @@
 	};
 	EventEmitter.addMethods(Model.prototype);
 	
+	var pendingRequests = {};
+	var whenSchemasFetchedCallbacks = [];
+	function checkSchemasFetched() {
+		if (generator.missingSchemas().length == 0) {
+			generatedClasses = generator.classes(null, requestFunction);
+			while (whenSchemasFetchedCallbacks.length) {
+				var callback = whenSchemasFetchedCallbacks.shift();
+				callback();
+			}
+		}
+	}
+	var whenSchemasFetched = api.whenSchemasFetched = function whenSchemasFetched(callback) {
+		whenSchemasFetchedCallbacks.push(callback);
+		generator.missingSchemas().forEach(function (missingUrl) {
+			if (pendingRequests[missingUrl]) return;
+			pendingRequests[missingUrl] = true;
+			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
+				if (error && typeof console !== 'undefined' && console.error) console.error(error);
+				pendingRequests[missingUrl] = false;
+				generator.addSchema(missingUrl, data || {});
+				checkSchemasFetched();
+			});
+		});
+		setTimeout(checkSchemasFetched, 10);
+	}
+	
 	api.create = function (initialValue, url, schemas, callback) {
 		if (Array.isArray(url)) {
 			callback = schemas;
@@ -313,7 +342,10 @@
 		var validatorFunctions = [];
 		var shouldRegenerate = false;
 		if (typeof schemas === 'string') schemas = [schemas];
-		(schemas || []).forEach(function (schemaUrl) {
+		schemas = schemas || [];
+
+		var pendingRequests = 1;
+		schemas.forEach(function (schemaUrl) {
 			generator.addSchema(schemaUrl);
 			var name = generator.classNameForUrl(schemaUrl);
 			validatorFunctions.push(function (data, dataPath, schemaMap) {
@@ -327,10 +359,13 @@
 			generatedClasses = generator.classes(null, requestFunction);
 		}
 		
+		
 		var rootModel = new RootModel(initialValue, validatorFunctions);
 		var result = rootModel.modelForPath('');
 		if (callback) {
-			callback(null, result);
+			whenSchemasFetched(function () {
+				callback(null, result);
+			});
 		}
 		return result;
 	};
