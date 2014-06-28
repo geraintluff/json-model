@@ -111,4 +111,43 @@ describe('Schema assignment', function () {
 		assert.include(validation.schemas[''], '#/anyOf/1');
 		assert.include(validation.schemas[''], '#/anyOf/2');
 	});
+	
+	it('assigns oneOf', function () {
+		var schema = {
+			oneOf: [
+				{"type": "string"},
+				{"type": "number"},
+				{"type": "integer"}
+			]
+		};
+
+		var classes = api.Generator({assignment: true}).addSchema('', schema, 'Demo').classes();
+		var Demo = classes.Demo;
+
+		var validation = Demo.validate("test");
+		
+		assert.isObject(validation.schemas);
+		assert.include(validation.schemas[''], '');
+		assert.include(validation.schemas[''], '#/oneOf/0');
+	});
+
+	it('assigns oneOf to first when multiple', function () {
+		var schema = {
+			oneOf: [
+				{"type": "string"},
+				{"type": "number"},
+				{"type": "integer"}
+			]
+		};
+
+		var classes = api.Generator({assignment: true}).addSchema('', schema, 'Demo').classes();
+		var Demo = classes.Demo;
+
+		var validation = Demo.validate(123);
+		
+		assert.isObject(validation.schemas);
+		assert.include(validation.schemas[''], '');
+		assert.include(validation.schemas[''], '#/oneOf/1');
+		assert.notInclude(validation.schemas[''], '#/oneOf/2');
+	});
 });

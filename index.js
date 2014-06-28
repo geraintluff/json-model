@@ -589,37 +589,72 @@
 				}.bind(this));
 			}
 
-			if (schema.anyOf) {
+			if (schema.anyOf || schema.oneOf) {
 				if (this.config.assignment) {
-					validation += 'var actualSchemaMap = schemaMap, actualErrors = errors, passCount = 0;\n';
+					validation += 'var actualSchemaMap = schemaMap, actualErrors = errors;\n'
 				} else {
-					validation += 'var actualErrors = errors, passCount = 0;\n';
+					validation += 'var actualErrors = errors;\n';
 				}
-				schema.anyOf.forEach(function (subSchema, index) {
-					validation += 'errors = [];\n'
-					if (this.config.assignment) {
-						validation += 'schemaMap = {};\n';
-					}
-					var subSchema = this.getFullSchema(subSchema);
-					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['anyOf', index]);
-					var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
-					validation += checkCode;
-					validation += 'if (!errors.length) {\n';
-					if (this.config.assignment) {
-						validation += indent('for (var key in schemaMap) {\n');
-						validation += indent(indent('actualSchemaMap[key] = (actualSchemaMap[key] || []).concat(schemaMap[key])\n'));
-						validation += indent('}\n');
-					}
-					validation += indent('passCount++;\n');
-					validation += '}\n';
-				}.bind(this));
+				if (schema.anyOf) {
+					validation += 'var anyOfPassCount = 0;\n';
+					schema.anyOf.forEach(function (subSchema, index) {
+						validation += 'errors = [];\n'
+						if (this.config.assignment) {
+							validation += 'schemaMap = {};\n';
+						}
+						var subSchema = this.getFullSchema(subSchema);
+						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['anyOf', index]);
+						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
+						validation += checkCode;
+						validation += 'if (!errors.length) {\n';
+						if (this.config.assignment) {
+							validation += indent('for (var key in schemaMap) {\n');
+							validation += indent(indent('actualSchemaMap[key] = (actualSchemaMap[key] || []).concat(schemaMap[key])\n'));
+							validation += indent('}\n');
+						}
+						validation += indent('anyOfPassCount++;\n');
+						validation += '}\n';
+					}.bind(this));
+				}
+				if (schema.oneOf) {
+					validation += 'var oneOfPassCount = 0;\n';
+					schema.oneOf.forEach(function (subSchema, index) {
+						validation += 'errors = [];\n'
+						if (this.config.assignment) {
+							validation += 'schemaMap = {};\n';
+						}
+						var subSchema = this.getFullSchema(subSchema);
+						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['oneOf', index]);
+						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
+						validation += checkCode;
+						validation += 'if (!errors.length) {\n';
+						if (this.config.assignment) {
+							validation += indent('if (!oneOfPassCount) {\n');
+							validation += indent(indent('for (var key in schemaMap) {\n'));
+							validation += indent(indent(indent('actualSchemaMap[key] = (actualSchemaMap[key] || []).concat(schemaMap[key])\n')));
+							validation += indent(indent('}\n'));
+							validation += indent('}\n');
+						}
+						validation += indent('oneOfPassCount++;\n');
+						validation += '}\n';
+					}.bind(this));
+				}
 				if (this.config.assignment) {
 					validation += 'schemaMap = actualSchemaMap;\n';
 				}
 				validation += 'errors = actualErrors;\n';
-				validation += 'if (!passCount) {\n';
-				validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
-				validation += '}\n';
+				if (schema.anyOf) {
+					validation += 'if (!anyOfPassCount) {\n';
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += '}\n';
+				}
+				if (schema.oneOf) {
+					validation += 'if (!oneOfPassCount) {\n';
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += '} else if (oneOfPassCount > 1) {\n';
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MULTIPLE) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += '}\n';
+				}
 			}
 			
 			var typeCode = {

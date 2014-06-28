@@ -53,6 +53,7 @@ describe('JSON Schema validation:', function () {
 	createTests('dependencies.json');
 	createTests('allOf.json');
 	createTests('anyOf.json');
+	createTests('oneOf.json');
 
 	createTests('ref.json');
 });
