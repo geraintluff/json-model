@@ -16,7 +16,8 @@
   "author": "Geraint Luff",
   "license": "MIT",
   "dependencies": {
-    "tv4": "~1.0.18"
+    "tv4": "~1.0.18",
+    "xmldom": "~0.1.19"
   },
   "devDependencies": {
     "chai": "~1.9.1",

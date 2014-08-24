@@ -250,13 +250,36 @@
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
 		};
-		this.getPathErrors = function (path) {
+		this.getPathErrors = function (path, includeSchemas) {
 			path = path || "";
-			return errors.filter(function (error) {
+			var result = errors.filter(function (error) {
 				return error.path == path
 					|| (error.path.substring(0, path.length) == path
 						&& error.path.charAt(path.length) == '/');
 			});
+			if (includeSchemas) {
+				for (var dataPath in schemaMap) {
+					if (dataPath == path
+						|| (dataPath.substring(0, path.length) == path
+							&& dataPath.charAt(path.length) == '/')) {
+						var schemaBases = {};
+						schemaMap[dataPath].forEach(function (schemaUrl) {
+							var baseUrl = schemaUrl.replace(/#.*/, '');
+							schemaBases[baseUrl] = true;
+						});
+						for (var schemaUrl in schemaBases) {
+							if (requestErrors[schemaUrl]) {
+								result.push({
+									code: schema2js.ErrorCodes.SCHEMA_FETCH_ERROR,
+									path: dataPath,
+									params: {url: schemaUrl, error: requestErrors[schemaUrl].message}
+								});
+							}
+						}
+					}
+				}
+			}
+			return result;
 		};
 
 		this.setPathValue("", initialValue);
@@ -324,13 +347,18 @@
 			}
 			return this._root.getPathSchemas(this._path + pathSpec);
 		},
-		errors: function (pathSpec) {
-			if (pathSpec == null) pathSpec = "";
+		errors: function (pathSpec, includeSchemaFetchErrors) {
+			if (pathSpec === true || pathSpec === false) {
+				includeSchemaFetchErrors = pathSpec;
+				pathSpec = "";
+			} else if (pathSpec == null) {
+				pathSpec = "";
+			}
 			pathSpec = pathSpec + "";
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			return this._root.getPathErrors(this._path + pathSpec);
+			return this._root.getPathErrors(this._path + pathSpec, includeSchemaFetchErrors);
 		},
 		jsonType: function (pathSpec) {
 			var value = this.get(pathSpec);
@@ -346,6 +374,7 @@
 	EventEmitter.addMethods(Model.prototype);
 	
 	var pendingRequests = {};
+	var requestErrors = {};
 	var whenAllSchemasFetchedCallbacks = [];
 	function checkSchemasFetched() {
 		if (generator.missingSchemas().length == 0) {
@@ -365,7 +394,10 @@
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
 			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
-				if (error && typeof console !== 'undefined' && console.error) console.error(error);
+				if (error) {
+					if (typeof console !== 'undefined' && console.error) console.error(error);
+					requestErrors[missingUrl] = error;
+				}
 				pendingRequests[missingUrl] = false;
 				generator.addSchema(missingUrl, data || {});
 				checkSchemasFetched();
@@ -374,6 +406,20 @@
 		setTimeout(checkSchemasFetched, 10);
 	}
 	
+	api.open = function (params, hintSchemas, callback) {
+		if (typeof params === 'string') {
+			params = {url: params};
+		}
+		if (typeof hintSchemas === 'function') {
+			callback = hintSchemas;
+			hintSchemas = null;
+		}
+		params.method = params.method || 'GET';
+		requestFunction(params, function (error, data, headers) {
+			if (error) return callback(error);
+			return api.create(data, params.url, hintSchemas, callback);
+		});
+	};
 	api.create = function (initialValue, url, schemas, callback) {
 		if (Array.isArray(url)) {
 			callback = schemas;

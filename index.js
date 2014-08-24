@@ -13,7 +13,7 @@
 	var api = {};
 	
 	// taken from tv4
-	var ErrorCodes = {
+	var ErrorCodes = api.ErrorCodes = {
 		INVALID_TYPE: 0,
 		ENUM_MISMATCH: 1,
 		ANY_OF_MISSING: 10,
@@ -46,6 +46,8 @@
 		KEYWORD_CUSTOM: 501,
 		// Schema structure
 		CIRCULAR_REFERENCE: 600,
+		// Error fetching schema
+		SCHEMA_FETCH_ERROR: 700,
 		// Non-standard validation options
 		UNKNOWN_PROPERTY: 1000
 	};
