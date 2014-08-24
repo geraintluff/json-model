@@ -19,6 +19,22 @@
 			return container;
 		}
 	};
+	
+	function openTag(tagName, attrs) {
+		var html = '<' + tagName;
+		for (var key in this.attrs) {
+			value = this.getAttr(key);
+			if (value) {
+				html += " " + key.escapeHtml() + '="' + value.toString().escapeHtml() + '"';
+			}
+		}
+		html += '>';
+		return html;
+	}
+	
+	function closeTag(tagName) {
+		return '</' + tagName + '>';
+	}
 
 	function Dom(tag, attrs, children) {
 		if (!(this instanceof Dom)) return new Dom(tag, attrs, children);
@@ -105,16 +121,9 @@
 		},
 		html: function (defaultTag) {
 			var tag = this.tag || defaultTag || 'span';
-			var html = '<' + tag;
-			for (var key in this.attrs) {
-				value = this.getAttr(key);
-				if (value) {
-					html += " " + key.escapeHtml() + '="' + value.toString().escapeHtml() + '"';
-				}
-			}
-			html += '>';
+			var html = openTag(tag, this.attrs);
 			html += this.innerHtml();
-			html += '</' + tag + '>';
+			html += closeTag(tag);
 			return html;
 		},
 		matchChild: function (index, element) {
@@ -356,7 +365,7 @@
 	};
 
 	DataModel.extend({
-		html: function (pathSpec) {
+		getHtml: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (value == null) value = '';
 			if (typeof value.toJSON === 'function') {
@@ -367,7 +376,7 @@
 			}
 			return (value + "").escapeHtml();
 		},
-		htmlCss: function (pathSpec) {
+		getHtmlCss: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (value == null) value = '';
 			return (value + "").escapeHtml().replace(/;/g, ',');
@@ -435,29 +444,40 @@
 			this.off('change', element._dataModelUpdateFunction);
 			element.boundDataModel = null;
 			return this;
+		},
+		html: function (tag, attrs, callback) {
+			if (typeof tag !== 'string') {
+				callback = attrs;
+				attrs = tag;
+				tag = null;
+			}
+			if (typeof attrs === 'function') {
+				callback = attrs;
+				attrs = null;
+			}
+			var htmlPrefix = '', htmlSuffix = '';
+			if (tag || attrs) {
+				htmlPrefix = openTag(tag || 'span');
+				htmlSuffix = closeTag(tag);
+			}
+			tag = tag || 'div';
+			attrs = attrs || {};
+			
+			var binding = getBinding(this, tag, attrs);
+			if (callback) {
+				setTimeout(function () {
+					var html = binding.html(this, tag, attrs);
+					html = htmlPrefix + html + htmlSuffix;
+					callback(null, html);
+				}.bind(this), 10);
+			} else {
+				var html = binding.html(this, tag, attrs);
+				html = htmlPrefix + html + htmlSuffix;
+				return html;
+			}
 		}
 	});
 	
-	DataModel.html = function (model, tag, attrs, callback) {
-		if (typeof tag !== 'string') {
-			callback = attrs;
-			attrs = tag;
-			tag = null;
-		}
-		if (typeof attrs === 'function') {
-			callback = attrs;
-			attrs = null;
-		}
-		tag = tag || 'div';
-		attrs = attrs || {};
-		
-		var binding = getBinding(model, tag, attrs);
-		setTimeout(function () {
-			var html = binding.html(model, tag, attrs);
-			callback(null, html);
-		}, 10);
-	};
-
 	DataModel.timer = {
 		wait: function (ms, listener) {
 			var timer = null;	
@@ -492,7 +512,7 @@
 			if (!('value' in attrs)) return true;
 		},
 		html: function (model) {
-			return model.html();
+			return model.getHtml();
 		}
 	});
 
