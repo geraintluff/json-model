@@ -297,16 +297,42 @@
 	};
 	DataModel.Dom = Dom;
 	
-	function Binding(bindObj) {
-		if (!(this instanceof Binding)) return new Binding(bindObj);
+	function Binding(bindObj, registerIndex) {
+		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
+		this.registerIndex = registerIndex;
+
 		if (typeof bindObj.canBind === 'string') {
-			var schemaUrl = bindObj.canBind;
-			this.canBind = function (model, element) {
-				return model.schemas().indexOf(schemaUrl) !== -1;
+			bindObj.canBind = {schema: bindObj.canBind};
+		}
+		if (typeof bindObj.canBind === 'object') {
+			var bindConditions = bindObj.canBind;
+			if (bindConditions.schema && !Array.isArray(bindConditions.schema)) {
+				bindConditions.schema = [bindConditions.schema];
+			}
+			if (bindConditions.tag && !Array.isArray(bindConditions.tag)) {
+				bindConditions.tag = [bindConditions.tag];
+			}
+			this.canBind = function (model, tag, attrs) {
+				if (bindConditions.tag && bindConditions.tag.indexOf(tag) === -1) {
+					return false;
+				}
+				if (bindConditions.schema) {
+					var modelSchemas = model.schemas();
+					if (!bindConditions.schema.some(function (schema) {
+						return modelSchemas.indexOf(schema) !== -1;
+					})) {
+						return false;
+					}
+				}
+				return true;
 			};
+			this.priority = bindObj.priority || 0;
+			this.priority += (!!bindConditions.tag)*10 + (!!bindConditions.schema)*5;
 		} else {
 			this.canBind = bindObj.canBind;
+			this.priority = bindObj.priority || 0;
 		}
+
 		if (typeof bindObj.html === 'function') {
 			this.html = bindObj.html.bind(bindObj);
 			this.dom = function (model, tagName, attrs) {
@@ -335,7 +361,14 @@
 	};
 
 	var bindings = [];
+	var bindingsNeedSort = false;
 	function getBinding(model, tagName, attrs, bindingHint) {
+		if (bindingsNeedSort) {
+			bindingsNeedSort = false;
+			bindings.sort(function (a, b) {
+				return (b.priority - a.priority) || (b.registerIndex - a.registerIndex);
+			});
+		}
 		if (typeof bindingHint === 'function') {
 			return new Binding({
 				dom: function (model) {
@@ -348,7 +381,7 @@
 	
 		var options = bindings;
 		var schemas = model.schemas();
-		for (var i = options.length - 1; i >= 0 ; i--) {
+		for (var i = 0; i < bindings.length ; i++) {
 			var binding = options[i];
 			if (binding.canBind(model, tagName, attrs)) {
 				return binding;
@@ -356,7 +389,8 @@
 		}
 	}
 	DataModel.addBinding = function (bindObj) {
-		bindings.push(new Binding(bindObj));
+		bindings.unshift(new Binding(bindObj));
+		bindingsNeedSort = true;
 		return this;
 	};
 	
@@ -508,6 +542,7 @@
 	// Default bindings
 
 	DataModel.addBinding({
+		priority: -Infinity,
 		canBind: function (model, tagName, attrs) {
 			if (!('value' in attrs)) return true;
 		},
