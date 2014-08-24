@@ -299,10 +299,12 @@
 			this.canBind = bindObj.canBind;
 		}
 		if (typeof bindObj.html === 'function') {
-			this.dom = function (model) {
-				return Dom.fromHtml(bindObj.html(model), model);
+			this.html = bindObj.html.bind(bindObj);
+			this.dom = function (model, tagName, attrs) {
+				return Dom.fromHtml(bindObj.html(model, tagName, attrs), model);
 			}
 		} else if (typeof bindObj.html === 'string') {
+			this.html = function () {return bindObj.html;};
 			var dom = Dom.fromHtml(bindObj.html);
 			this.dom = function () {return dom;};
 		} else if (bindObj.dom instanceof Dom) {
@@ -316,7 +318,12 @@
 			return !pointerPath;
 		};
 	}
-	Binding.prototype = {};
+	Binding.prototype = {
+		html: function (model, tagName, attrs) {
+			var dom = this.dom(model, tagName, attrs);
+			return dom.innerHtml();
+		}
+	};
 
 	var bindings = [];
 	function getBinding(model, tagName, attrs, bindingHint) {
@@ -402,7 +409,7 @@
 				}
 
 				if (binding.dom) {
-					var dom = binding.dom(thisModel);
+					var dom = binding.dom(thisModel, tagName, attrs);
 					dom.coerce(element, thisModel);
 				}
 
@@ -430,6 +437,26 @@
 			return this;
 		}
 	});
+	
+	DataModel.html = function (model, tag, attrs, callback) {
+		if (typeof tag !== 'string') {
+			callback = attrs;
+			attrs = tag;
+			tag = null;
+		}
+		if (typeof attrs === 'function') {
+			callback = attrs;
+			attrs = null;
+		}
+		tag = tag || 'div';
+		attrs = attrs || {};
+		
+		var binding = getBinding(model, tag, attrs);
+		setTimeout(function () {
+			var html = binding.html(model, tag, attrs);
+			callback(null, html);
+		}, 10);
+	};
 
 	DataModel.timer = {
 		wait: function (ms, listener) {
