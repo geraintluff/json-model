@@ -88,18 +88,18 @@
 	
 	var api = {};
 	
-	var suppliedRequestFunction = function () {throw new Error('Requests not supported');};
+	var errorRequestFunction = function () {throw new Error('Requests not supported');};
+	var suppliedRequestFunction = errorRequestFunction;
 	function requestFunction(params, callback) {
 		return suppliedRequestFunction(params, callback);
 	}
 	
 	var generator = api.generator = new schema2js.Generator({classes: false, assignment: true});
 	var generatedClasses = generator.classes(null, requestFunction);
-	api.tv4 = generator.tv4;
 	api.EventEmitter = EventEmitter;
 	
 	api.setRequestFunction = function (func) {
-		suppliedRequestFunction = func;
+		suppliedRequestFunction = func || errorRequestFunction;
 	};
 	
 	function resolvePointer(path, valueTarget) {
@@ -120,6 +120,8 @@
 	function RootModel(initialValue, validatorFunctions) {
 		var value;
 		var schemaMap = {};
+		var errors = [];
+		var pendingSchemaFetch = false;
 		
 		var models = {c: {}};
 		this.modelForPath = function (path) {
@@ -150,15 +152,16 @@
 				}
 			}
 			
-			// Recalculate schemas (from scratch for now - we'll recalculate later!)
+			// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
 			var oldSchemaMap = schemaMap;
 			schemaMap = {};
+			errors = [];
 			for (var i = 0; i < validatorFunctions.length; i++) {
-				validatorFunctions[i](value, "", schemaMap);
+				errors = errors.concat(validatorFunctions[i](value, "", schemaMap));
 			}
 			
 			// Trigger events
-			function checkSchemaChanges(path, modelSet, ignoreKey) {
+			function checkSchemaChanges(path, modelSet, ignoreKey, oldSchemaMap) {
 				var oldSchemas = oldSchemaMap[path] || [];
 				var newSchemas = schemaMap[path] || [];
 				var added = [], removed = [];
@@ -168,8 +171,9 @@
 					}
 				}
 				for (var i = 0; i < newSchemas.length; i++) {
-					if (oldSchemas.indexOf(newSchemas[i]) === -1) {
-						added.push(newSchemas[i]);
+					var schemaUrl = newSchemas[i];
+					if (oldSchemas.indexOf(schemaUrl) === -1) {
+						added.push(schemaUrl);
 					}
 				}
 				if (added.length || removed.length) {
@@ -178,7 +182,7 @@
 					}
 					for (var key in modelSet.c) {
 						if (ignoreKey === null || key !== ignoreKey) {
-							checkSchemaChanges(path + "/" + pointerEscape(key), modelSet.c[key], null);
+							checkSchemaChanges(path + "/" + pointerEscape(key), modelSet.c[key], null, oldSchemaMap);
 						}
 					}
 				}
@@ -189,7 +193,7 @@
 				for (var key in modelSet.c) {
 					var childModelSet = modelSet.c[key];
 					if (childModelSet.m) {
-						childModelSet.m.emit('change', '', childModelSet.m.get());
+						childModelSet.m.emit('change', '');
 					}
 					childValueChanges(childModelSet)
 				}
@@ -203,9 +207,9 @@
 				if (partialPath !== path) {
 					nextKey = pointerUnescape(pathParts[i]);
 				}
-				checkSchemaChanges(partialPath, modelSet, nextKey);
+				checkSchemaChanges(partialPath, modelSet, nextKey, oldSchemaMap);
 				if (modelSet.m) {
-					modelSet.m.emit('change', path.substring(partialPath.length), newValue);
+					modelSet.m.emit('change', path.substring(partialPath.length));
 				}
 				if (nextKey !== null) {
 					modelSet = modelSet.c[nextKey];
@@ -214,6 +218,21 @@
 					// End of the queue, so iterate into children
 					childValueChanges(modelSet);
 				}
+			}
+			
+			if (!pendingSchemaFetch && !api.schemasFetched()) {
+				pendingSchemaFetch = true;
+				api.whenSchemasFetched(function () {
+					pendingSchemaFetch = false;
+					// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
+					var oldSchemaMap = schemaMap;
+					schemaMap = {};
+					errors = [];
+					for (var i = 0; i < validatorFunctions.length; i++) {
+						errors = errors.concat(validatorFunctions[i](value, "", schemaMap));
+					}
+					checkSchemaChanges('', models, null, oldSchemaMap);
+				});
 			}
 			return true;
 		};
@@ -230,6 +249,14 @@
 		};
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
+		};
+		this.getPathErrors = function (path) {
+			path = path || "";
+			return errors.filter(function (error) {
+				return error.path == path
+					|| (error.path.substring(0, path.length) == path
+						&& error.path.charAt(path.length) == '/');
+			});
 		};
 
 		this.setPathValue("", initialValue);
@@ -270,6 +297,9 @@
 			}
 			return this._root.modelForPath(this._path + pathSpec);
 		},
+		pointer: function () {
+			return this._path;
+		},
 		length: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (Array.isArray(value)) return value.length;
@@ -294,6 +324,21 @@
 			}
 			return this._root.getPathSchemas(this._path + pathSpec);
 		},
+		errors: function (pathSpec) {
+			if (pathSpec == null) pathSpec = "";
+			pathSpec = pathSpec + "";
+			if (pathSpec && pathSpec.charAt(0) !== "/") {
+				pathSpec = "/" + pointerEscape(pathSpec);
+			}
+			return this._root.getPathErrors(this._path + pathSpec);
+		},
+		jsonType: function (pathSpec) {
+			var value = this.get(pathSpec);
+			if (value === undefined) return 'undefined';
+			if (value === null) return 'null';
+			if (Array.isArray(value)) return 'array';
+			return typeof value;
+		},
 		toJSON: function () {
 			return this.get();
 		}
@@ -301,18 +346,21 @@
 	EventEmitter.addMethods(Model.prototype);
 	
 	var pendingRequests = {};
-	var whenSchemasFetchedCallbacks = [];
+	var whenAllSchemasFetchedCallbacks = [];
 	function checkSchemasFetched() {
 		if (generator.missingSchemas().length == 0) {
 			generatedClasses = generator.classes(null, requestFunction);
-			while (whenSchemasFetchedCallbacks.length) {
-				var callback = whenSchemasFetchedCallbacks.shift();
+			while (whenAllSchemasFetchedCallbacks.length) {
+				var callback = whenAllSchemasFetchedCallbacks.shift();
 				callback();
 			}
 		}
 	}
+	api.schemasFetched = function () {
+		return !generator.missingSchemas().length;
+	};
 	var whenSchemasFetched = api.whenSchemasFetched = function whenSchemasFetched(callback) {
-		whenSchemasFetchedCallbacks.push(callback);
+		whenAllSchemasFetchedCallbacks.push(callback);
 		generator.missingSchemas().forEach(function (missingUrl) {
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
@@ -359,7 +407,6 @@
 			generatedClasses = generator.classes(null, requestFunction);
 		}
 		
-		
 		var rootModel = new RootModel(initialValue, validatorFunctions);
 		var result = rootModel.modelForPath('');
 		if (callback) {
@@ -373,6 +420,9 @@
 		Object.keys(obj).forEach(function (key) {
 			Model.prototype[key] = obj[key];
 		});
+	};
+	api.is = function (potentialModel) {
+		return potentialModel instanceof Model;
 	};
 	
 	return api;

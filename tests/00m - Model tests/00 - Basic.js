@@ -16,6 +16,7 @@ describe('Model', function () {
 		
 		assert.deepEqual(model.keys(), ['foo']);
 		assert.deepEqual(model.get('foo'), model.prop('foo').get());
+		assert.deepEqual(model.prop('foo').pointer(), '/foo');
 	});
 
 	it('has item(), length()', function () {
@@ -33,7 +34,7 @@ describe('Model', function () {
 	
 	it('schemas', function () {
 		var schemaUrl = '/schemas/test' + Math.random();
-		api.tv4.addSchema(schemaUrl, {
+		api.generator.addSchema(schemaUrl, {
 			type: 'object', 
 			properties: {
 				'foo': {type: 'string'},
@@ -46,6 +47,40 @@ describe('Model', function () {
 		assert.deepEqual(model.schemas(), [schemaUrl]);
 		assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo']);
 		assert.deepEqual(model.schemas('foo'), model.prop('foo').schemas());
+	});
+
+	it('missing schema', function (done) {
+		var schemaUrl = '/schemas/test' + Math.random();
+		api.setRequestFunction(function (params, callback) {
+			console.log('params', params);
+			console.log('callback: ' + callback);
+			api.setRequestFunction(null);
+			assert.deepEqual(params.url, schemaUrl, 'request correct URL');
+
+			setTimeout(function () {
+				// Have to delay callback so can check pre-callback schema assignment
+				callback(null, {
+					type: 'object',
+					properties: {
+						'foo': {type: null}
+					}
+				});
+
+				// After callback called
+				assert.deepEqual(model.schemas().length, 1);
+				assert.deepEqual(model.schemas('foo').length, 1);
+				assert.deepEqual(model.errors().length, 0);
+				done();
+			}, 10);
+		});
+		
+		assert.isTrue(api.generator.missingSchema(schemaUrl));
+		var model = api.create({foo: 'hello'}, [schemaUrl]);
+		
+		// Before callback called
+		assert.deepEqual(model.schemas().length, 1);
+		assert.deepEqual(model.schemas('foo').length, 0);
+		assert.deepEqual(model.errors().length, 0);
 	});
 
 	it('toJSON()', function () {

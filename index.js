@@ -269,6 +269,10 @@
 			this.classVarForUrl(url); // reserves an appropriate variable name
 			return this;
 		},
+		missingSchema: function (url) {
+			url = url.replace(/\?#.*/, '');
+			return !this.tv4.getSchema(url);
+		},
 		missingSchemas: function () {
 			return this.tv4.getMissingUris();
 		},

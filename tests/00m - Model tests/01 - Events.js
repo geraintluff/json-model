@@ -6,13 +6,13 @@ describe('Model events', function () {
 		var model = api.create({foo:'bar'});
 		
 		var changeArguments = [];
-		model.on('change', function (pointer, value) {
+		model.on('change', function () {
 			assert.equal(this, model);
-			changeArguments.push([pointer, value]);
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
 		
 		model.set('/foo', 'baz');
-		assert.deepEqual(changeArguments, [['/foo', 'baz']]);
+		assert.deepEqual(changeArguments, [[model, '/foo']]);
 	});
 
 	it('triggers change in child when child changed', function () {
@@ -20,34 +20,34 @@ describe('Model events', function () {
 		
 		var changeArguments = [];
 		model.on('change', function (pointer, value) {
-			changeArguments.push([this, pointer, value]);
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
 		model.prop('foo').on('change', function (pointer, value) {
-			changeArguments.push([this, pointer, value]);
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
 		
 		model.set('/foo', 'baz');
-		assert.deepEqual(changeArguments, [[model, '/foo', 'baz'], [model.prop('foo'), '', 'baz']]);
+		assert.deepEqual(changeArguments, [[model, '/foo'], [model.prop('foo'), '']]);
 	});
 
 	it('triggers change in child when parent changed', function () {
 		var model = api.create({foo:'bar'});
 		
 		var changeArguments = [];
-		model.on('change', function (pointer, value) {
-			changeArguments.push([this, pointer, value]);
+		model.on('change', function () {
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
-		model.prop('foo').on('change', function (pointer, value) {
-			changeArguments.push([this, pointer, value]);
+		model.prop('foo').on('change', function () {
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
 		
 		model.set({foo: 'baz'});
-		assert.deepEqual(changeArguments, [[model, '', {foo: 'baz'}], [model.prop('foo'), '', 'baz']]);
+		assert.deepEqual(changeArguments, [[model, ''], [model.prop('foo'), '']]);
 	});
 
 	it('triggers schema change', function () {
 		var schemaUrl = '/schemas/test' + Math.random();
-		api.tv4.addSchema(schemaUrl, {
+		api.generator.addSchema(schemaUrl, {
 			oneOf: [
 				{
 					properties: {
@@ -65,11 +65,11 @@ describe('Model events', function () {
 		var model = api.create({foo:'bar'}, [schemaUrl]);
 		
 		var changeArguments = [];
-		model.on('schemachange', function (added, removed) {
-			changeArguments.push([this, added, removed]);
+		model.on('schemachange', function () {
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
-		model.prop('foo').on('schemachange', function (added, removed) {
-			changeArguments.push([this, added, removed]);
+		model.prop('foo').on('schemachange', function () {
+			changeArguments.push([this].concat(Array.prototype.slice.call(arguments, 0)));
 		});
 		
 		model.set({foo: 123});
