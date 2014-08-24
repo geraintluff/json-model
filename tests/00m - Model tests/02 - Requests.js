@@ -1,7 +1,8 @@
 var api = require('../../model');
+var schema2js = require('../../');
 var assert = require('chai').assert;
 
-describe('Model events', function () {
+describe('Requests', function () {
 	it('api.open', function (done) {
 		api.setRequestFunction(function (params, callback) {
 			assert.deepEqual(params.url, 'http://example.com/test');
@@ -34,7 +35,11 @@ describe('Model events', function () {
 		api.create({}, null, 'http://example.com/schemas/test', function (error, model) {
 			assert.isNull(error);
 			assert.isTrue(api.is(model));
-			var errors = model.schemaErrors();
+			var errors = model.errors();
+			assert.deepEqual(errors.length, 0);
+			errors = model.errors(true);
+			assert.deepEqual(errors.length, 1);
+			assert.deepEqual(errors[0].code, schema2js.ErrorCodes.SCHEMA_FETCH_ERROR);
 			
 			api.setRequestFunction(null);
 			done();

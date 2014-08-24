@@ -9,7 +9,7 @@
 		// Browser globals
 		global.DataModel = factory(global.DataModel);
 	}
-})(this, function (DataModel, DOMParser) {
+})(this, function (api, DOMParser) {
 	// Hackity-hack!
 	DOMParser = DOMParser || {
 		parse: function (html) {
@@ -98,7 +98,7 @@
 		getAttr: function (key) {
 			var value = this.attrs[key];
 			if (typeof value === 'function') value = value();
-			if (DataModel.is(value)) {
+			if (api.is(value)) {
 				value = value.get();
 			}
 			return value;
@@ -109,7 +109,7 @@
 			if (value instanceof Dom) {
 				return value.html();
 			}
-			if (DataModel.is(value)) return value.html();
+			if (api.is(value)) return value.html();
 			return (value + "").escapeHtml();
 		},
 		innerHtml: function () {
@@ -286,7 +286,7 @@
 			}
 			if (bindingModel && element.boundDataModel !== bindingModel) {
 				if (element.boundDataModel) {
-					element.boundDataModel.unbindFrom(element);
+					element.boundapi.unbindFrom(element);
 				}
 				bindingModel.bindTo(element);
 			}
@@ -295,7 +295,7 @@
 			this.boundModel = model;
 		}
 	};
-	DataModel.Dom = Dom;
+	api.Dom = Dom;
 	
 	function Binding(bindObj, registerIndex) {
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
@@ -359,46 +359,102 @@
 			return dom.innerHtml();
 		}
 	};
-
-	var bindings = [];
-	var bindingsNeedSort = false;
-	function getBinding(model, tagName, attrs, bindingHint) {
-		if (bindingsNeedSort) {
-			bindingsNeedSort = false;
-			bindings.sort(function (a, b) {
-				return (b.priority - a.priority) || (b.registerIndex - a.registerIndex);
-			});
-		}
-		if (typeof bindingHint === 'function') {
-			return new Binding({
-				dom: function (model) {
-					var result = bindingHint(model);
-					if (typeof result === 'string') result = Dom.fromHtml(result);
-					return result;
-				}
-			});
-		}
 	
-		var options = bindings;
-		var schemas = model.schemas();
-		for (var i = 0; i < bindings.length ; i++) {
-			var binding = options[i];
-			if (binding.canBind(model, tagName, attrs)) {
-				return binding;
+	function Bindings(parent) {
+		this._state = 0; // Increment every time something happens, so children know to re-concatenate
+		this._immediateOptions = [];
+		this._concatOptions = [];
+		this._needSort = false;
+		
+		this.parent = parent || {
+			_state: 0,
+			_options: function () {return this;}.bind([])
+		};
+		this._parentState = parent ? parent.options().length : 0;
+	}
+	Bindings.prototype = {
+		_options: function () {
+			if (this.parent._state !== this._parentState) {
+				this._concatOptions = this._immediateOptions.concat(this.parent._options());
+				this._needSort = true;
+				this._parentState = this.parent._state;
+			}
+			if (this._needSort) {
+				this._needSort = false;
+				this._concatOptions.sort(function (a, b) {
+					return (b.priority - a.priority) || (b.registerIndex - a.registerIndex);
+				});
+			}
+			return this._concatOptions;
+		},
+		add: function (bindObj) {
+			this._state++;
+			this._immediateOptions.push(new Binding(bindObj));
+			this._parentState = null; // Trigger re-concatenate on next options() call
+			return this;
+		},
+		select: function (model, tagName, attrs) {
+			var options = this._options();
+			var schemas = model.schemas();
+			for (var i = 0; i < options.length ; i++) {
+				var binding = options[i];
+				if (binding.canBind(model, tagName, attrs)) {
+					return binding;
+				}
 			}
 		}
-	}
-	DataModel.addBinding = function (bindObj) {
-		bindings.unshift(new Binding(bindObj));
-		bindingsNeedSort = true;
-		return this;
 	};
+	if (typeof require === 'function' && typeof module !== 'undefined') {
+		Bindings.prototype.include = function (filename) {
+			if (filename.charAt(0) === '.') {
+				filename = require('path').join(process.cwd(), filename);
+			}
+			var after = function () {
+				delete global.bindings;
+			};
+			if ('bindings' in global) {
+				var oldValue = global.bindings;
+				after = function () {
+					global.bindings = oldValue;
+				};
+			}
+			global.bindings = this;
+			
+			require(filename);
+			var code = require('fs').readFileSync(filename, {encoding: 'utf-8'});
+			code = '/*** ' + require('path').basename(filename) + ' ***/\n\n' + code;
+			this._includeCode = this._includeCode || [];
+			this._includeCode.push(code);
+			
+			after();
+		};
+		Bindings.prototype.bundle = function (skip) {
+			var header = skip ? '' : '(function (bindings) {\n\n';
+			var footer = skip ? '' : '\n\n})(DataModel.bindings);';
+			var includeCode = this._includeCode.join('\n\n').replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
+			if (typeof this.parent.bundle === 'function') {
+				includeCode += (includeCode ? '\n\n' : '') + this.parent.bundle;
+			}
+			return header + includeCode + footer;
+		};
+		api.bundle = function (bindings) {
+			bindings = bindings || api.bindings;
+			var code = ['/index.js', '/model.js', '/model-bind.js'].map(function (filename) {
+				var result = '/*** ' + filename + ' ***/\n\n';
+				result += require('fs').readFileSync(__dirname + filename, {encoding: 'utf-8'});
+				return result;
+			});
+			code.push(bindings.bundle());
+			return code.join('\n\n');
+		};
+	}
+	api.bindings = new Bindings();
 	
 	String.prototype.escapeHtml = function () {
 		return this.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	};
 
-	DataModel.extend({
+	api.extend({
 		getHtml: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (value == null) value = '';
@@ -415,10 +471,10 @@
 			if (value == null) value = '';
 			return (value + "").escapeHtml().replace(/;/g, ',');
 		},
-		bindTo: function (element, bindingHint) {
+		bindTo: function (element, bindings) {
 			if (element.boundDataModel === this) return this;
 			if (element.boundDataModel) {
-				element.boundDataModel.unbindFrom(element);
+				element.boundapi.unbindFrom(element);
 			}
 			var elementId;
 			if (typeof element === 'string') {
@@ -431,6 +487,18 @@
 			}
 			var currentBinding = null;
 			
+			bindings = binding || api.bindings;
+			if (typeof bindings === 'function') {
+				var constBinding = new Binding({
+					dom: function (model) {
+						var result = bindingHint(model);
+						if (typeof result === 'string') result = Dom.fromHtml(result);
+						return result;
+					}
+				});
+				bindings = {select: function () {return constBinding;}};
+			}
+			
 			var thisModel = this;
 			var updateFunction = function (pointerPath) {
 				var tagName = element.tagName.toLowerCase();
@@ -439,7 +507,7 @@
 					var attr = element.attributes[i];
 					attrs[name] = attr.value;
 				}
-				var binding = getBinding(thisModel, tagName, attrs, bindingHint);
+				var binding = bindings.select(thisModel, tagName, attrs);
 				if (!binding) throw new Error('No suitable binding found');
 
 				if (binding === currentBinding) {
@@ -479,16 +547,23 @@
 			element.boundDataModel = null;
 			return this;
 		},
-		html: function (tag, attrs, callback) {
+		html: function (tag, attrs, bindings, callback) {
 			if (typeof tag !== 'string') {
-				callback = attrs;
+				callback = bindings;
+				bindings = attrs;
 				attrs = tag;
 				tag = null;
 			}
-			if (typeof attrs === 'function') {
-				callback = attrs;
+			if (typeof attrs !== 'object' || attrs instanceof Bindings) {
+				callback = bindings;
+				bindings = attrs;
 				attrs = null;
 			}
+			if (typeof bindings === 'function') {
+				callback = bindings;
+				bindings = null;
+			}
+			bindings = bindings || api.bindings;
 			var htmlPrefix = '', htmlSuffix = '';
 			if (tag || attrs) {
 				htmlPrefix = openTag(tag || 'span');
@@ -497,7 +572,7 @@
 			tag = tag || 'div';
 			attrs = attrs || {};
 			
-			var binding = getBinding(this, tag, attrs);
+			var binding = bindings.select(this, tag, attrs);
 			if (callback) {
 				setTimeout(function () {
 					var html = binding.html(this, tag, attrs);
@@ -512,7 +587,7 @@
 		}
 	});
 	
-	DataModel.timer = {
+	api.timer = {
 		wait: function (ms, listener) {
 			var timer = null;	
 			return function () {
@@ -540,8 +615,7 @@
 	};
 
 	// Default bindings
-
-	DataModel.addBinding({
+	api.bindings.add({
 		priority: -Infinity,
 		canBind: function (model, tagName, attrs) {
 			if (!('value' in attrs)) return true;
@@ -551,7 +625,7 @@
 		}
 	});
 
-	DataModel.addBinding({
+	api.bindings.add({
 		canBind: function (model, tagName, attrs) {
 			if (tagName === 'textarea' || (tagName === 'input' && attrs.type === 'text')) {
 				return true;
@@ -583,5 +657,5 @@
 		}
 	});
 	
-	return DataModel
+	return api;
 });
