@@ -621,6 +621,19 @@
 			return model.getHtml();
 		}
 	});
+	
+	api.bindings.add({
+		priority: -100,
+		canBind: function (model, tagName) {
+			if (tagName !== 'table') return;
+			if (model.jsonType() !== 'array') return;
+			var schemas = model.schemas();
+			return true;
+		},
+		html: function (model) {
+			return '<tr><td>:)</td></tr>';
+		}
+	});
 
 	api.bindings.add({
 		canBind: function (model, tagName, attrs) {

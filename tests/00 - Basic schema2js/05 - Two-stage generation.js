@@ -48,7 +48,6 @@ describe('Two-stage generation', function () {
 		
 		generator.addSchema('/schemas/foo', {type: 'integer'}, 'Foo');
 		
-		console.log('generator.schemaStore', generator.schemaStore);
 		var classes2 = generator.classes();
 		assert.equal(Demo, classes2.Demo);
 		

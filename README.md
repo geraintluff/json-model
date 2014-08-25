@@ -2,10 +2,12 @@
 
 This project defines a wrapper for JSON data, adding events, JSON Schema (validation/assignment), and bindings to HTML (server-side) and DOM (browser).
 
-## Code-generation
+## Code-generation for validation
 
-As well as the generic container, this project can generate generate JavaScript classes/code from JSON Schemas.
+As well as the generic container, this project can generate validation code (and also basic JavaScript classes) from JSON Schemas.  Since a single schema is often validated against multiple instances, this is more efficient than parsing the schema each time
 
-Currently it just generates data-storage classes (which do things like fill out default values), but in the (hopefully near) future it will generate link/interaction methods based on `links`.
+### Speed comparison
 
-The validation/schema-assignment for the models is also done using generated code.
+<!--SPEEDSTART-->
+<table><tr><td>:)</td></tr></table>
+<!--SPEEDEND-->

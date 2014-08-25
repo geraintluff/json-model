@@ -104,14 +104,31 @@
 	var generatedClasses = generator.classes(null, requestFunction);
 	api.validator = function (schema, callback) {
 		callback = callback || function () {};
+		var transform = function (validatorErrors) {
+			return function (data) {
+				var schemaMap = {};
+				var errors = validatorErrors(data, "", schemaMap);
+				return {valid: !errors.length, errors: errors, schemas: schemaMap};
+			};
+		};
+		
+		var result = transform(api.validationErrors(schema, function (error) {
+			callback(error, result);
+		}));
+		return result;
+	};
+	api.validationErrors = function (schema, callback) {
+		callback = callback || function () {};
 		if (typeof schema === 'string') {
-			generator.addSchema(schemaUrl);
-			var name = generator.classNameForUrl(schemaUrl);
-			var validator = function (data, dataPath) {
+			if (generator.missing(schema)) {
+				generator.addSchema(schema);
+			}
+			var name = generator.classNameForUrl(schema);
+			var validator = function (data, dataPath, schemaMap) {
 				if (generatedClasses[name]) {
-					return generatedClasses[name].validate(data, dataPath);
+					return generatedClasses[name].validationErrors(data, dataPath, schemaMap);
 				} else {
-					return {valid: true, schemas: {'': schema}};
+					return [];
 				}
 			};
 			whenSchemasFetched(function () {
@@ -123,8 +140,7 @@
 			var className = 'AnonymousSchema';
 			anonymousGen.addSchema(schema, className);
 			var classes = anonymousGen.classes();
-			var validator = classes[className].validate;
-			validator.generator = anonymousGen;
+			var validator = classes[className].validationErrors;
 
 			var missing = anonymousGen.missing();
 			// Make sure the main generator will have/fetch all the appropriate schemas
@@ -381,6 +397,13 @@
 		item: function (index) {
 			return this._root.modelForPath(this._path + '/' + pointerEscape(index + ''));
 		},
+		items: function (callback) {
+			var length = this.length();
+			for (var i = 0; i < length; i++) {
+				callback(this.item(i), i);
+			}
+			return this;
+		},
 		keys: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (!value || Array.isArray(value) || typeof value !== 'object') return [];
@@ -388,6 +411,13 @@
 		},
 		prop: function (key) {
 			return this._root.modelForPath(this._path + '/' + pointerEscape(key + ''));
+		},
+		props: function (callback) {
+			var keys = this.keys();
+			for (var i = 0; i < keys.length; i++) {
+				callback(this.prop(keys[i]), keys[i]);
+			}
+			return this;
 		},
 		schemas: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
@@ -427,7 +457,7 @@
 	var requestErrors = {};
 	var whenAllSchemasFetchedCallbacks = [];
 	function checkSchemasFetched(skipCallbacks) {
-		if (generator.schemaStore.missing().length == 0) {
+		if (generator.schemaStore.missing().length === 0) {
 			generatedClasses = generator.classes(null, requestFunction);
 			while (!skipCallbacks && whenAllSchemasFetchedCallbacks.length) {
 				var callback = whenAllSchemasFetchedCallbacks.shift();
@@ -487,26 +517,13 @@
 			callback = schemas;
 			schemas = null;
 		}
-		var validatorFunctions = [];
-		var shouldRegenerate = false;
-		if (typeof schemas === 'string') schemas = [schemas];
+		if (typeof schemas === 'string' || (typeof schemas === 'object' && !Array.isArray(schemas))) schemas = [schemas];
 		schemas = schemas || [];
 
-		var pendingRequests = 1;
-		schemas.forEach(function (schemaUrl) {
-			generator.addSchema(schemaUrl);
-			var name = generator.classNameForUrl(schemaUrl);
-			validatorFunctions.push(function (data, dataPath, schemaMap) {
-				return generatedClasses[name].validationErrors(data, dataPath, schemaMap);
-			});
-			if (!generatedClasses[name]) {
-				shouldRegenerate = true;
-			}
+		var validatorFunctions = schemas.map(function (schema) {
+			return api.validationErrors(schema);
 		});
-		if (shouldRegenerate) {
-			generatedClasses = generator.classes(null, requestFunction);
-		}
-		
+
 		var rootModel = new RootModel(initialValue, validatorFunctions);
 		var result = rootModel.modelForPath('');
 		if (callback) {

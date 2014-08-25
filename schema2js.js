@@ -467,8 +467,11 @@
 			if (typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
 			} else {
-				this.missingMap[baseUrl] = true;
-				if (!name) name = schema;
+				name = name || schema;
+				this.missingMap[url] = true;
+				if (!this.previouslyHandled[baseUrl]) {
+					this.missingMap[baseUrl] = true;
+				}
 			}
 			this.classNames[url] = name || this.classNames[url] || "";
 			this.classVarForUrl(url); // reserves an appropriate variable name
@@ -476,7 +479,6 @@
 		},
 		missing: function (url) {
 			if (typeof url !== 'string') {
-				return this.schemaStore.missing();
 				var result = Object.keys(this.missingMap);
 				this.schemaStore.missing().forEach(function (url) {
 					if (result.indexOf(url) === -1) result.push(url);
