@@ -1,7 +1,7 @@
 var api = require('../../');
 var assert = require('chai').assert;
 
-describe('Model', function () {
+describe('Basic model', function () {
 	it('creation, set/get', function () {
 		var model = api.create({foo:'bar'});
 		
@@ -52,8 +52,6 @@ describe('Model', function () {
 	it('missing schema', function (done) {
 		var schemaUrl = '/schemas/test' + Math.random();
 		api.setRequestFunction(function (params, callback) {
-			console.log('params', params);
-			console.log('callback: ' + callback);
 			api.setRequestFunction(null);
 			assert.deepEqual(params.url, schemaUrl, 'request correct URL');
 

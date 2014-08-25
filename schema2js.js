@@ -1,16 +1,173 @@
 (function (global, factory) {
 	if (typeof define === 'function' && define.amd) {
 		// AMD. Register as an anonymous module.
-		define(['tv4'], factory);
+		define([], factory);
 	} else if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('tv4'));
+		module.exports = factory();
 	} else {
 		// Browser globals
-		global.schema2js = factory(global.tv4);
+		global.schema2js = factory();
 	}
-}(this, function (tv4) {
+}(this, function () {
 	var api = {};
+	
+	// parseURI() and resolveUrl() are from https://gist.github.com/1088850
+	//   -  released as public domain by author ("Yaffle") - see comments on gist
+
+	function parseURI(url) {
+		var m = String(url).replace(/^\s+|\s+$/g, '').match(/^([^:\/?#]+:)?(\/\/(?:[^:@]*(?::[^:@]*)?@)?(([^:\/?#]*)(?::(\d*))?))?([^?#]*)(\?[^#]*)?(#[\s\S]*)?/);
+		// authority = '//' + user + ':' + pass '@' + hostname + ':' port
+		return (m ? {
+			href     : m[0] || '',
+			protocol : m[1] || '',
+			authority: m[2] || '',
+			host     : m[3] || '',
+			hostname : m[4] || '',
+			port     : m[5] || '',
+			pathname : m[6] || '',
+			search   : m[7] || '',
+			hash     : m[8] || ''
+		} : null);
+	}
+	function resolveUrl(base, href) {// RFC 3986
+		function removeDotSegments(input) {
+			var output = [];
+			input.replace(/^(\.\.?(\/|$))+/, '')
+				.replace(/\/(\.(\/|$))+/g, '/')
+				.replace(/\/\.\.$/, '/../')
+				.replace(/\/?[^\/]*/g, function (p) {
+					if (p === '/..') {
+						output.pop();
+					} else {
+						output.push(p);
+					}
+			});
+			return output.join('').replace(/^\//, input.charAt(0) === '/' ? '/' : '');
+		}
+
+		href = parseURI(href || '');
+		base = parseURI(base || '');
+
+		return !href || !base ? null : (href.protocol || base.protocol) +
+			(href.protocol || href.authority ? href.authority : base.authority) +
+			removeDotSegments(href.protocol || href.authority || href.pathname.charAt(0) === '/' ? href.pathname : (href.pathname ? ((base.authority && !base.pathname ? '/' : '') + base.pathname.slice(0, base.pathname.lastIndexOf('/') + 1) + href.pathname) : base.pathname)) +
+			(href.protocol || href.authority || href.pathname ? href.search : (href.search || base.search)) +
+			href.hash;
+	}
+	function isTrustedUrl(baseUrl, testUrl) {
+		if(testUrl.substring(0, baseUrl.length) === baseUrl){
+			var remainder = testUrl.substring(baseUrl.length);
+			if ((testUrl.length > 0 && testUrl.charAt(baseUrl.length - 1) === "/")
+				|| remainder.charAt(0) === "#"
+				|| remainder.charAt(0) === "?") {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	var SchemaStore = api.SchemaStore = function SchemaStore() {
+		this.schemas = {};
+		this.missingUrls = {};
+	};
+	SchemaStore.prototype = {
+		missing: function () {
+			return Object.keys(this.missingUrls);
+		},
+		add: function (url, schema) {
+			if (typeof url === 'object') {
+				schema = url;
+				url = schema.id || arguments[1];
+			}
+			var baseUrl = url.replace(/#.*/, '');
+			if (url === baseUrl + '#') {
+				url = baseUrl;
+			}
+			delete this.missingUrls[baseUrl];
+			this.schemas[url] = schema;
+			this._searchSchema(schema, url);
+		},
+		_searchSchema: function (schema, baseUri) {
+			if (schema && typeof schema === "object") {
+				if (baseUri === undefined) {
+					baseUri = schema.id;
+				} else if (typeof schema.id === "string") {
+					schema.id = baseUri = resolveUrl(baseUri, schema.id);
+				}
+				
+				if (Array.isArray(schema)) {
+					for (var i = 0; i < schema.length; i++) {
+						this._searchSchema(schema[i], baseUri);
+					}
+				} else {
+					if (typeof schema.id === 'string' && isTrustedUrl(baseUri, schema.id)) {
+						if (this.schemas[schema.id] === undefined) {
+							this.schemas[schema.id] = schema;
+						}
+					}
+					if (typeof schema['$ref'] === "string") {
+						schema['$ref'] = resolveUrl(baseUri, schema['$ref']);
+					}
+					for (var key in schema) {
+						if (key === "enum") {
+							continue;						
+						} else if (typeof schema[key] === 'object') {
+							this._searchSchema(schema[key], baseUri);
+						} else if (key === '$ref') {
+							var refUri = schema[key];
+							var baseRefUri = refUri.replace(/#.*/, '');
+							if (baseRefUri && !(refUri in this.schemas) && !(baseRefUri in this.schemas)) {
+								this.missingUrls[baseRefUri] = baseRefUri;
+							}
+						}
+					}
+				}
+			}
+		},
+		resolveRefs: function (schema, urlHistory) {
+			if (schema['$ref'] !== undefined) {
+				urlHistory = urlHistory || {};
+				if (urlHistory[schema['$ref']]) {
+					return this.createError(ErrorCodes.CIRCULAR_REFERENCE, {urls: Object.keys(urlHistory).join(', ')}, '', '');
+				}
+				urlHistory[schema['$ref']] = true;
+				schema = this.get(schema['$ref'], urlHistory);
+			}
+			return schema;
+		},
+		get: function (url, urlHistory) {
+			var schema;
+			if (this.schemas[url] !== undefined) {
+				schema = this.schemas[url];
+				return this.resolveRefs(schema, urlHistory);
+			}
+			var baseUrl = url.replace(/#.*/, '');
+			var fragment = url.substring(baseUrl.length + 1);
+			if (typeof this.schemas[baseUrl] === 'object') {
+				schema = this.schemas[baseUrl];
+				var pointerPath = decodeURIComponent(fragment);
+				if (pointerPath === "") {
+					return this.resolveRefs(schema, urlHistory);
+				} else if (pointerPath.charAt(0) !== "/") {
+					return undefined;
+				}
+				var parts = pointerPath.split("/").slice(1);
+				for (var i = 0; i < parts.length; i++) {
+					var component = parts[i].replace(/~1/g, "/").replace(/~0/g, "~");
+					if (schema[component] === undefined) {
+						schema = undefined;
+						break;
+					}
+					schema = schema[component];
+				}
+				if (schema !== undefined) {
+					return this.resolveRefs(schema, urlHistory);
+				}
+			}
+			this.missingUrls[baseUrl] = true;
+		}
+	};
 	
 	// taken from tv4
 	var ErrorCodes = api.ErrorCodes = {
@@ -45,7 +202,7 @@
 		FORMAT_CUSTOM: 500,
 		KEYWORD_CUSTOM: 501,
 		// Schema structure
-		CIRCULAR_REFERENCE: 600,
+		CIRCULAR_REFERENCE: 600, // $ref loop
 		// Error fetching schema
 		SCHEMA_FETCH_ERROR: 700,
 		// Non-standard validation options
@@ -234,7 +391,7 @@
 		if (!(this instanceof Generator)) return new Generator(config);
 		
 		config = config || {};
-		this.tv4 = config.tv4 || tv4.freshApi();
+		this.schemaStore = config.schemaStore || new SchemaStore();
 		this.config = {
 			directMethods: config.directMethods !== false,
 			validation: config.validation !== false,
@@ -258,7 +415,7 @@
 			}
 			url = (typeof url === 'string') ? url : (Math.random().toString().substring(2) + 'anonymous');
 			if (typeof schema === 'object') {
-				this.tv4.addSchema(url, schema);
+				this.schemaStore.add(url, schema);
 
 				if ('$ref' in schema) {
 					this.aliases[url] = schema.$ref;
@@ -273,10 +430,10 @@
 		},
 		missingSchema: function (url) {
 			url = url.replace(/\?#.*/, '');
-			return !this.tv4.getSchema(url);
+			return !this.schemaStore.get(url);
 		},
 		missingSchemas: function () {
-			return this.tv4.getMissingUris();
+			return this.schemaStore.missing();
 		},
 		code: function () {
 			if (this._code) return this._code;
@@ -380,7 +537,7 @@
 			var refUrl = schema['$ref'];
 			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
 			haltUrls[refUrl] = true;
-			var schema = this.tv4.getSchema(refUrl);
+			var schema = this.schemaStore.get(refUrl);
 			if (!schema) {
 				this.missing[refUrl] = true;
 				return {"description": "Missing schema: " + refUrl, placeholder: true};
@@ -389,7 +546,7 @@
 			return this.getFullSchema(schema, haltUrls);
 		},
 		codeForUrl: function (url, requireUrl) {
-			var schema = this.getFullSchema(this.tv4.getSchema(url));
+			var schema = this.getFullSchema(this.schemaStore.get(url));
 			if (!schema) {
 				this.missing[url] = true;
 				schema = {"description": "Missing schema: " + url};

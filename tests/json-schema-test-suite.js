@@ -4,8 +4,8 @@ var fs = require('fs'), path = require('path');
 
 var testDir = path.join(__dirname, 'json-schema-test-suite/tests/draft4');
 
-var tv4 = require('tv4');
-tv4.addSchema(require('./draft-04-schema.json'));
+var schemaStore = new api.schema2js.SchemaStore();
+schemaStore.add(require('./draft-04-schema.json'));
 
 describe('JSON Schema validation:', function () {
 	function createTests(filename) {
@@ -16,7 +16,7 @@ describe('JSON Schema validation:', function () {
 			it(test.description, function () {
 				var schema = test.schema;
 				
-				var generator = api.schema2js.Generator({tv4: tv4}).addSchema(schema, 'TestClass');
+				var generator = api.schema2js.Generator({schemaStore: schemaStore}).addSchema(schema, 'TestClass');
 				var classes = generator.classes();
 				var TestClass = classes.TestClass;
 				
