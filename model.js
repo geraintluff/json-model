@@ -555,7 +555,7 @@
 			callback = schemas;
 			schemas = null;
 		}
-		if (typeof schemas === 'string' || (typeof schemas === 'object' && !Array.isArray(schemas))) schemas = [schemas];
+		if (typeof schemas === 'string' || (schemas && typeof schemas === 'object' && !Array.isArray(schemas))) schemas = [schemas];
 		schemas = schemas || [];
 
 		var validatorFunctions = schemas.map(function (schema) {

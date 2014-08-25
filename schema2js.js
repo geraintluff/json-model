@@ -105,6 +105,7 @@
 			if (url === baseUrl + '#') {
 				url = baseUrl;
 			}
+			schema.id = schema.id || url;
 			delete this.missingUrls[baseUrl];
 			this.schemas[url] = schema;
 			this._searchSchema(schema, url);
@@ -464,7 +465,7 @@
 			url = normUrl(url || '');
 			var baseUrl = url.replace(/#.*/, '');
 			delete this.previouslyHandled[url]; // Force a re-compute
-			if (typeof schema === 'object') {
+			if (schema && typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
 			} else {
 				name = name || schema;
