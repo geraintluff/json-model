@@ -458,8 +458,12 @@
 			}
 			return this._root.getPathSchemas(this._path + pathSpec);
 		},
-		hasSchema: function (url) {
-			return this.schemas().indexOf(url) !== -1;
+		hasSchema: function (pathSpec, url) {
+			if (typeof url !== 'string') {
+				url = pathSpec;
+				pathSpec = null;
+			}
+			return this.schemas(pathSpec).indexOf(url) !== -1;
 		},
 		errors: function (pathSpec, includeSchemaFetchErrors) {
 			if (pathSpec === true || pathSpec === false) {

@@ -50,6 +50,7 @@ describe('Basic model', function () {
 		
 		assert.isTrue(model.hasSchema(schemaUrl));
 		assert.isFalse(model.hasSchema(schemaUrl + '1234'));
+		assert.isTrue(model.hasSchema('/foo', schemaUrl + '#/properties/foo'));
 	});
 
 	it('missing schema', function (done) {
