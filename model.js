@@ -7,7 +7,7 @@
 		module.exports = factory(require('./schema2js'));
 	} else {
 		// Browser globals
-		global.DataModel = factory(global.schema2js);
+		global.JsonModel = factory(global.schema2js);
 	}
 })(this, function (schema2js) {
 	var api = {};

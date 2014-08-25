@@ -14,7 +14,6 @@
 	
 	// parseURI() and resolveUrl() are from https://gist.github.com/1088850
 	//   -  released as public domain by author ("Yaffle") - see comments on gist
-
 	function parseURI(url) {
 		var m = String(url).replace(/^\s+|\s+$/g, '').match(/^([^:\/?#]+:)?(\/\/(?:[^:@]*(?::[^:@]*)?@)?(([^:\/?#]*)(?::(\d*))?))?([^?#]*)(\?[^#]*)?(#[\s\S]*)?/);
 		// authority = '//' + user + ':' + pass '@' + hostname + ':' port

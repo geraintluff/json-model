@@ -1,13 +1,13 @@
 (function (global, factory) {
 	if (typeof define === 'function' && define.amd) {
 		// AMD. Register as an anonymous module.
-		define(['schema2js'], factory);
+		define(['json-model'], factory);
 	} else if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
 		module.exports = factory(require('./model'), require('xmldom'));
 	} else {
 		// Browser globals
-		global.DataModel = factory(global.DataModel);
+		global.JsonModel = factory(global.JsonModel);
 	}
 })(this, function (api, DOMParser) {
 	// Hackity-hack!
@@ -430,7 +430,7 @@
 		};
 		Bindings.prototype.bundle = function (skip) {
 			var header = skip ? '' : '(function (bindings) {\n\n';
-			var footer = skip ? '' : '\n\n})(DataModel.bindings);';
+			var footer = skip ? '' : '\n\n})(JsonModel.bindings);';
 			var includeCode = this._includeCode.join('\n\n').replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
 			if (typeof this.parent.bundle === 'function') {
 				includeCode += (includeCode ? '\n\n' : '') + this.parent.bundle;
@@ -439,7 +439,7 @@
 		};
 		api.bundle = function (bindings) {
 			bindings = bindings || api.bindings;
-			var code = ['/index.js', '/model.js', '/model-bind.js'].map(function (filename) {
+			var code = ['/schema2js.js', '/model.js', '/model-bind.js'].map(function (filename) {
 				var result = '/*** ' + filename + ' ***/\n\n';
 				result += require('fs').readFileSync(__dirname + filename, {encoding: 'utf-8'});
 				return result;
