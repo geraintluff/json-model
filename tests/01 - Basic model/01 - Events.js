@@ -1,4 +1,4 @@
-var api = require('../../model');
+var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Model events', function () {

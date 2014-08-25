@@ -20,11 +20,11 @@ describe('URI Templates:', function () {
 					return {code: expr, type: typeof spec.variables[prop]};
 				}
 				
-				var templateFunction1 = new Function('obj', 'return ' + api.uriTemplate(typeSensitiveVar, template));
+				var templateFunction1 = new Function('obj', 'return ' + api.schema2js.uriTemplate(typeSensitiveVar, template));
 				var result1 = templateFunction1(spec.variables);
 				assert.include(options, result1);
 
-				var templateFunction2 = new Function('obj', 'return ' + api.uriTemplate('obj', template));
+				var templateFunction2 = new Function('obj', 'return ' + api.schema2js.uriTemplate('obj', template));
 				var result2 = templateFunction2(spec.variables);
 				assert.include(options, result2);
 

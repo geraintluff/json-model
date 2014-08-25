@@ -4,12 +4,15 @@
 		define(['schema2js'], factory);
 	} else if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('./index'));
+		module.exports = factory(require('./schema2js'));
 	} else {
 		// Browser globals
 		global.DataModel = factory(global.schema2js);
 	}
 })(this, function (schema2js) {
+	var api = {};
+	api.schema2js = schema2js;
+	api.ErrorCodes = schema2js.ErrorCodes;
 
 	function pointerEscape(key) {
 		return key.replace(/~/g, "~0").replace(/\//g, "~1");
@@ -85,8 +88,7 @@
 		}
 		return obj;
 	};
-	
-	var api = {};
+	api.EventEmitter = EventEmitter;
 	
 	var errorRequestFunction = function () {throw new Error('Requests not supported');};
 	var suppliedRequestFunction = errorRequestFunction;

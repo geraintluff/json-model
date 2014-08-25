@@ -16,7 +16,7 @@ describe('JSON Schema validation:', function () {
 			it(test.description, function () {
 				var schema = test.schema;
 				
-				var generator = api.Generator({tv4: tv4}).addSchema(schema, 'TestClass');
+				var generator = api.schema2js.Generator({tv4: tv4}).addSchema(schema, 'TestClass');
 				var classes = generator.classes();
 				var TestClass = classes.TestClass;
 				

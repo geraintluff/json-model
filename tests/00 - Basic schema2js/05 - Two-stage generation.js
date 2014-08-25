@@ -1,4 +1,4 @@
-var api = require('../../');
+var api = require('../../').schema2js;
 var assert = require('chai').assert;
 
 describe('Two-stage generation', function () {
