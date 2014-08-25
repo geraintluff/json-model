@@ -15,6 +15,8 @@ module.exports = function (grunt) {
 	});
 	
 	grunt.registerTask('compare', function () {
+		var packageInfo = require('./package.json');
+	
 		var fs = require('fs'), path = require('path');
 	
 		function Validator(name, validatorGenerator) {
@@ -71,24 +73,24 @@ module.exports = function (grunt) {
 
 		/*******/
 
-		var repeats = 1;
+		var repeats = 10;
 		
-		var thisApi = require('./');
-		thisApi.schemaStore.add(require('./tests/draft-04-schema.json'));
-		thisApi.setRequestFunction(function (params, callback) {
+		var jsonModel = require('./');
+		jsonModel.schemaStore.add(require('./tests/draft-04-schema.json'));
+		jsonModel.setRequestFunction(function (params, callback) {
 			callback(null, {});
 		});
-		var reference = new Validator('json-model (precompile)', function (schema) {
-			var validator = thisApi.validator(schema);
+		var reference = new Validator('json-model@' + packageInfo.version + ' (precompiled)', function (schema) {
+			var validator = jsonModel.validator(schema);
 			return function (data) {
 				return validator(data).valid
 			};
 		});
 		
 		var alternatives = [];
-		alternatives.push(new Validator('json-model (individual)', function (schema) {
+		alternatives.push(new Validator('json-model@' + packageInfo.version + ' (compile and validate)', function (schema) {
 			return function (data) {
-				var validator = thisApi.validator(schema);
+				var validator = jsonModel.validator(schema);
 				return validator(data).valid;
 			};
 		}));
@@ -106,39 +108,76 @@ module.exports = function (grunt) {
 		}));
 		
 		var referenceResult = reference.runTests(tests, repeats);
-		referenceResult.speed = 1;
+		referenceResult.relativeTime = 1;
 		console.log(referenceResult);
 		console.log('--------------------');
 		var results = alternatives.map(function (validator) {
 			var result = validator.runTests(tests, repeats);
-			result.relativeSpeed = result.ms/referenceResult.ms;
+			result.relativeTime = result.ms/referenceResult.ms;
 			console.log(result);
 			return result;
+		});
+
+		jsonModel.schemaStore.add('tmp://comparison', {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					name: {title: 'Setup', type: 'string'},
+					ms: {title: 'Time (ms)', type: 'number'},
+					relativeTime: {title: 'Relative speed', type: 'number'},
+					score: {title: 'Test pass rate', type: 'number', format: 'percent'}
+				},
+				propertyOrder: ['name', 'time', 'relativeTime', 'score']
+			}
+		});
+		jsonModel.bindings.add({
+			canBind: {
+				tag: 'table',
+				schema: 'tmp://comparison'
+			},
+			html: function (model) {
+				var html = '<tr>' + ['Setup', 'Time (ms)', 'Relative time', 'Test score'].map(function (title) {
+					return '<th style="background-color: #DDD;">' + title.escapeHtml() + '</th>';
+				}).join('') + '</tr>';
+				return html + model.map(function (item) {
+					return item.html('tr');
+				}).join('');
+			}
+		});
+		jsonModel.bindings.add({
+			canBind: {
+				tag: 'tr',
+				schema: 'tmp://comparison#/items'
+			},
+			html: function (model) {
+				return '<tr>' + model.mapProps(['name', 'ms', 'relativeTime', 'score'], function (prop) {
+					return prop.html('td');
+				}).join('') + '</tr>';
+			}
+		});
+		jsonModel.bindings.add({
+			canBind: ['tmp://comparison#/items/properties/relativeTime', 'tmp://comparison#/items/properties/score'],
+			html: function (model) {
+				var value = Math.round(model.get()*100)/100;
+				if (model.hasSchema('tmp://comparisons#/items/properties/score')) {
+					value += '%';
+				}
+				return value;
+			}
 		});
 		
 		var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
 		readme = readme.replace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end) {
-			var model = thisApi.create([referenceResult].concat(results), null, {
-				type: 'array',
-				items: {
-					type: 'objects',
-					properties: {
-						name: {title: 'Setup', type: 'string'},
-						time: {title: 'Time (ms)', type: 'number'},
-						relativeSpeed: {title: 'Relative speed', type: 'number'},
-						score: {title: 'Test pass rate', type: 'number', format: 'percent'}
-					}
-				}
-			});
+			var model = jsonModel.create([referenceResult].concat(results), null, 'tmp://comparison');
 			var html = model.html('table', {width: '100%'});
 			return start + '\n' + html  + '\n' + end;
 		});
 		fs.writeFileSync(__dirname + '/README.md', readme);
-		fs.writeFileSync(__dirname + '/index.html', require('mdpages').convertString(readme));
 	});
 
 	// main cli commands
-	grunt.registerTask('default', ['test']);
+	grunt.registerTask('default', ['test', 'compare']);
 	grunt.registerTask('test', ['mochaTest']);
 
 };

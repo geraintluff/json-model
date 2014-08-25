@@ -22,9 +22,13 @@
 	
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
-		for (var key in this.attrs) {
-			value = this.getAttr(key);
-			if (value) {
+		for (var key in attrs) {
+			value = attrs[key];
+			if (typeof value === 'function') value = value();
+			if (api.is(value)) value = value.get();
+			if (value === '' || value === true) {
+				html += " " + key.escapeHtml();
+			} else if (value) {
 				html += " " + key.escapeHtml() + '="' + value.toString().escapeHtml() + '"';
 			}
 		}
@@ -300,7 +304,7 @@
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
 		this.registerIndex = registerIndex;
 
-		if (typeof bindObj.canBind === 'string') {
+		if (typeof bindObj.canBind === 'string' || Array.isArray(bindObj.canBind)) {
 			bindObj.canBind = {schema: bindObj.canBind};
 		}
 		if (typeof bindObj.canBind === 'object') {
@@ -308,12 +312,21 @@
 			if (bindConditions.schema && !Array.isArray(bindConditions.schema)) {
 				bindConditions.schema = [bindConditions.schema];
 			}
+			if (bindConditions.type && !Array.isArray(bindConditions.type)) {
+				bindConditions.type = [bindConditions.type];
+			}
 			if (bindConditions.tag && !Array.isArray(bindConditions.tag)) {
 				bindConditions.tag = [bindConditions.tag];
 			}
 			this.canBind = function (model, tag, attrs) {
 				if (bindConditions.tag && bindConditions.tag.indexOf(tag) === -1) {
 					return false;
+				}
+				if (bindConditions.type) {
+					var modelType = model.jsonType();
+					if (bindConditions.type.indexOf(modelType) === -1) {
+						return false;
+					}
 				}
 				if (bindConditions.schema) {
 					var modelSchemas = model.schemas();
@@ -326,7 +339,7 @@
 				return true;
 			};
 			this.priority = bindObj.priority || 0;
-			this.priority += (!!bindConditions.tag)*10 + (!!bindConditions.schema)*5;
+			this.priority += (!!bindConditions.tag)*10 + (!!bindConditions.schema)*5 + (!!bindConditions.type)*2;
 		} else {
 			this.canBind = bindObj.canBind;
 			this.priority = bindObj.priority || 0;
@@ -563,7 +576,7 @@
 			bindings = bindings || api.bindings;
 			var htmlPrefix = '', htmlSuffix = '';
 			if (tag || attrs) {
-				htmlPrefix = openTag(tag || 'span');
+				htmlPrefix = openTag(tag || 'span', attrs || {});
 				htmlSuffix = closeTag(tag);
 			}
 			tag = tag || 'div';
@@ -622,19 +635,6 @@
 		}
 	});
 	
-	api.bindings.add({
-		priority: -100,
-		canBind: function (model, tagName) {
-			if (tagName !== 'table') return;
-			if (model.jsonType() !== 'array') return;
-			var schemas = model.schemas();
-			return true;
-		},
-		html: function (model) {
-			return '<tr><td>:)</td></tr>';
-		}
-	});
-
 	api.bindings.add({
 		canBind: function (model, tagName, attrs) {
 			if (tagName === 'textarea' || (tagName === 'input' && attrs.type === 'text')) {

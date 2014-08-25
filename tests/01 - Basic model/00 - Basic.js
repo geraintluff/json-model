@@ -47,6 +47,9 @@ describe('Basic model', function () {
 		assert.deepEqual(model.schemas(), [schemaUrl]);
 		assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo']);
 		assert.deepEqual(model.schemas('foo'), model.prop('foo').schemas());
+		
+		assert.isTrue(model.hasSchema(schemaUrl));
+		assert.isFalse(model.hasSchema(schemaUrl + '1234'));
 	});
 
 	it('missing schema', function (done) {

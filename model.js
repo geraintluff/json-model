@@ -404,6 +404,16 @@
 			}
 			return this;
 		},
+		map: function (callback) {
+			var result = [];
+			this.items(function (item, i) {
+				var entry = callback(item, i);
+				if (typeof entry !== 'undefined') {
+					result.push(entry);
+				}
+			});
+			return result;
+		},
 		keys: function (pathSpec) {
 			var value = this.get(pathSpec);
 			if (!value || Array.isArray(value) || typeof value !== 'object') return [];
@@ -419,6 +429,27 @@
 			}
 			return this;
 		},
+		mapProps: function (keys, callback) {
+			if (typeof keys === 'function') {
+				var result = {};
+				this.props(function (prop, key) {
+					var entry = keys(prop, key);
+					if (typeof entry !== 'undefined') {
+						result[key] = entry;
+					}
+				});
+				return result;
+			} else {
+				var result = [];
+				for (var i = 0; i < keys.length; i++) {
+					var entry = callback(this.prop(keys[i]), keys[i]);
+					if (typeof entry !== 'undefined') {
+						result.push(entry);
+					}
+				}
+				return result;
+			}
+		},
 		schemas: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
 			pathSpec = pathSpec + "";
@@ -426,6 +457,9 @@
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
 			return this._root.getPathSchemas(this._path + pathSpec);
+		},
+		hasSchema: function (url) {
+			return this.schemas().indexOf(url) !== -1;
 		},
 		errors: function (pathSpec, includeSchemaFetchErrors) {
 			if (pathSpec === true || pathSpec === false) {
