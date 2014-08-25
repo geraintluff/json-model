@@ -154,7 +154,7 @@ module.exports = function (grunt) {
 				schema: 'tmp://comparison#/items'
 			},
 			html: function (model) {
-				return '<tr>' + model.mapProps(['name', 'ms', 'relativeTime', 'score'], function (prop) {
+				return '<tr>' + model.mapProps(['name', 'ms', 'relativeTime', 'score', 'repeats'], function (prop) {
 					return prop.html('td');
 				}).join('') + '</tr>';
 			}
