@@ -34,7 +34,7 @@ describe('Basic model', function () {
 	
 	it('schemas', function () {
 		var schemaUrl = '/schemas/test' + Math.random();
-		api.generator.addSchema(schemaUrl, {
+		api.schemaStore.add(schemaUrl, {
 			type: 'object', 
 			properties: {
 				'foo': {type: 'string'},
@@ -51,9 +51,13 @@ describe('Basic model', function () {
 
 	it('missing schema', function (done) {
 		var schemaUrl = '/schemas/test' + Math.random();
+		var requestParams = [];
 		api.setRequestFunction(function (params, callback) {
 			api.setRequestFunction(null);
 			assert.deepEqual(params.url, schemaUrl, 'request correct URL');
+			
+			requestParams.push(params);
+			assert.deepEqual(requestParams.length, 1, 'only one request made');
 
 			setTimeout(function () {
 				// Have to delay callback so can check pre-callback schema assignment
@@ -63,17 +67,23 @@ describe('Basic model', function () {
 						'foo': {type: null}
 					}
 				});
-
+				
 				// After callback called
 				assert.deepEqual(model.schemas().length, 1);
-				assert.deepEqual(model.schemas('foo').length, 1);
+				assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo']);
 				assert.deepEqual(model.errors().length, 0);
 				done();
 			}, 10);
 		});
 		
-		assert.isTrue(api.generator.missingSchema(schemaUrl));
+		assert.isTrue(api.schemaStore.missing(schemaUrl));
+		var missing = api.schemaStore.missing();
+		assert.notInclude(missing, schemaUrl, 'schemaUrl in missing');
+		
 		var model = api.create({foo: 'hello'}, [schemaUrl]);
+		
+		missing = api.schemaStore.missing();
+		assert.include(missing, schemaUrl, 'schemaUrl in missing');
 		
 		// Before callback called
 		assert.deepEqual(model.schemas().length, 1);

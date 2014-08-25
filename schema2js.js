@@ -66,13 +66,35 @@
 		return false;
 	}
 	
-	var SchemaStore = api.SchemaStore = function SchemaStore() {
-		this.schemas = {};
-		this.missingUrls = {};
+	var SchemaStore = api.SchemaStore = function SchemaStore(parent) {
+		this.schemas = parent ? Object.create(parent.schemas) : {};
+		this.missingUrls = parent ? Object.create(parent.missingUrls) : {};
+		this.missing = function (url) {
+			if (url === undefined) {
+				if (!parent) {
+					return Object.keys(this.missingUrls);
+				} else {
+					var result = [];
+					for (var key in this.missingUrls) {
+						if (parent.missing(key)) {
+							result.push(key);
+						} else {
+							delete this.missingUrls[key];
+						}
+					}
+					return result;
+				}
+			} else {
+				if (this.schemas[url]) return false;
+				var baseUrl = url.replace(/#.*/, '');
+				var result = (this.missingUrls[baseUrl] || !(baseUrl in this.schemas)) && (!parent || parent.missing(url));
+				return result;
+			}
+		};
 	};
 	SchemaStore.prototype = {
-		missing: function () {
-			return Object.keys(this.missingUrls);
+		child: function () {
+			return new SchemaStore(this);
 		},
 		add: function (url, schema) {
 			if (typeof url === 'object') {
@@ -117,7 +139,7 @@
 							var refUri = schema[key];
 							var baseRefUri = refUri.replace(/#.*/, '');
 							if (baseRefUri && !(refUri in this.schemas) && !(baseRefUri in this.schemas)) {
-								this.missingUrls[baseRefUri] = baseRefUri;
+								this.missingUrls[baseRefUri] = true;
 							}
 						}
 					}
@@ -135,11 +157,11 @@
 			}
 			return schema;
 		},
-		get: function (url, urlHistory) {
+		get: function (url, urlHistory, ignoreRefs) {
 			var schema;
 			if (this.schemas[url] !== undefined) {
 				schema = this.schemas[url];
-				return this.resolveRefs(schema, urlHistory);
+				return ignoreRefs ? schema : this.resolveRefs(schema, urlHistory);
 			}
 			var baseUrl = url.replace(/#.*/, '');
 			var fragment = url.substring(baseUrl.length + 1);
@@ -147,7 +169,7 @@
 				schema = this.schemas[baseUrl];
 				var pointerPath = decodeURIComponent(fragment);
 				if (pointerPath === "") {
-					return this.resolveRefs(schema, urlHistory);
+					return ignoreRefs ? schema : this.resolveRefs(schema, urlHistory);
 				} else if (pointerPath.charAt(0) !== "/") {
 					return undefined;
 				}
@@ -161,12 +183,13 @@
 					schema = schema[component];
 				}
 				if (schema !== undefined) {
-					return this.resolveRefs(schema, urlHistory);
+					return ignoreRefs ? schema : this.resolveRefs(schema, urlHistory);
 				}
 			}
 			this.missingUrls[baseUrl] = true;
 		}
 	};
+	api.SchemaStore = SchemaStore;
 	
 	// taken from tv4
 	var ErrorCodes = api.ErrorCodes = {
@@ -401,11 +424,36 @@
 		this.classNames = {};
 		this.classVars = {GeneratedClass: true}; // it's our default superclass, so make sure it won't be used later
 		this.aliases = {};
-		this.missing = {};
+		this.missingMap = {};
 		this.previouslyHandled = {};
+		
+		/*
+		this.child = function (separateMissing) {
+			function copyObj(obj) {
+				var result = {};
+				for (var key in obj) {
+					result[key] = obj[key];
+				}
+				return result;
+			}
+			var childConfig = Object.create(config);
+			childConfig.schemaStore = this.schemaStore.child();
+			
+			var child = new Generator(childConfig);
+			child.classNames = copyObj(this.classNames);
+			child.classVars = copyObj(this.classVars);
+			child.aliases = copyObj(this.aliases);
+			child.missing = separateMissing ? copyObj(this.missing) : this.missing;
+			child.previouslyHandled = copyObj(this.previouslyHandled);
+			child._code = this._code;
+			child._classes = copyObj(this._classes);
+			return child;
+		};
+		*/
 	};
 	Generator.prototype = {
 		addSchema: function (url, schema, name) {
+			this._codeInvalid = true;
 			delete this._code;
 			if (typeof url === 'object') {
 				name = schema;
@@ -413,29 +461,35 @@
 				url = schema && schema.id;
 			}
 			url = (typeof url === 'string') ? url : (Math.random().toString().substring(2) + 'anonymous');
+			url = normUrl(url || '');
+			var baseUrl = url.replace(/#.*/, '');
 			if (typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
-
-				if ('$ref' in schema) {
-					this.aliases[url] = schema.$ref;
+				if (this.previouslyHandled[baseUrl]) {
+					throw new Error('Re-adding something that has already been processed');
 				}
 			} else if (!name) {
+				this.missingMap[baseUrl] = true;
+				if (this.previouslyHandled[baseUrl]) {
+					throw new Error('Re-adding something that has already been processed');
+				}
 				name = schema;
 			}
-			url = normUrl(url || '');
 			this.classNames[url] = name || this.classNames[url] || "";
 			this.classVarForUrl(url); // reserves an appropriate variable name
 			return this;
 		},
-		missingSchema: function (url) {
-			url = url.replace(/\?#.*/, '');
-			return !this.schemaStore.get(url);
-		},
-		missingSchemas: function () {
-			return this.schemaStore.missing();
+		missing: function (url) {
+			if (typeof url !== 'string') {
+				return Object.keys(this.missingMap);
+			} else {
+				var baseUrl = url.replace(/#.*/, '');
+				return this.missingMap[baseUrl] || this.schemaStore.missing(baseUrl);
+			}
 		},
 		code: function () {
-			if (this._code) return this._code;
+			if (!this._codeInvalid && this._code) return this._code;
+			this._codeInvalid = false;
 			var code = '';
 			code += 'function pointerEscape(key) {\n';
 			code += indent('return key.replace(/~/g, "~0").replace(/\\//g, "~1");\n');
@@ -472,16 +526,42 @@
 				}
 			}.bind(this);
 			for (var i = 0; i < urls.length; i++) {
-				if (!this.previouslyHandled[urls[i]]) {
-					addCodeForUrl(urls[i], true);
+				var url = normUrl(urls[i]);
+				if (!this.previouslyHandled[url]) {
+					addCodeForUrl(url, true);
 				}
 			}
 			for (var url in this.aliases) {
+				if (this.previouslyHandled[url]) continue;
+				this.previouslyHandled[url] = true;
+
 				var alias = this.aliases[url];
 				var urlName = this.classNameForUrl(url);
 				var aliasName = this.classNameForUrl(alias);
 				code += '\n/* $ref: ' + url.replace(/\*/g, '%2A') + ' -> ' + alias.replace(/\*/g, '%2A') + ' */\n';
-				code += propertyExpression('classes', urlName) + ' = ' + propertyExpression('classes', aliasName) + ';\n';
+
+				if (this.config.classes === false) {
+					// Validation and links only
+					code += propertyExpression('classes', urlName) + ' = {};\n';
+				} else {
+					code += propertyExpression('classes', urlName) + ' = function () {\n';
+					code += indent('return ' + propertyExpression('classes', aliasName) + '.apply(this, arguments);\n');
+					code += '};\n';
+				}
+				if (this.config.validation) {
+					code += propertyExpression('classes', urlName) + '.validate = function (data) {\n';
+					code += indent('return ' + propertyExpression('classes', aliasName) + '.validate(data);\n');
+					code += '};\n';
+					if (this.config.assignment) {
+						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path, schemaMap) {\n';
+						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path, schemaMap);\n');
+						code += '};\n';
+					} else {
+						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path) {\n';
+						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path);\n');
+						code += '};\n';
+					}
+				}
 			}
 			code += '\nreturn classes;\n';
 			code = 'function (superclass, classes, request) {\n' + indent(code) + '}';
@@ -491,6 +571,7 @@
 			return propertyExpression('classes', this.classNameForUrl(url))
 		},
 		classVarForUrl: function (url, suffix) {
+			this._codeInvalid = true;
 			if (typeof suffix !== 'string') suffix = 'Class';
 			var varName = this.classNames[url] || url;
 			varName = varName.replace(/^[^#?]*[/]/g, '').replace(/[^a-zA-Z0-9]+([a-zA-Z0-9]?)/g, function (match, nextChar) {
@@ -511,6 +592,7 @@
 			return varName + counter + suffix;
 		},
 		classNameForUrl: function (url) {
+			url = normUrl(url);
 			return this.classNames[url] = this.classNames[url] || this.classVarForUrl(url, '');
 		},
 		extendUrl: function (url, components) {
@@ -536,23 +618,36 @@
 			var refUrl = schema['$ref'];
 			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
 			haltUrls[refUrl] = true;
-			var schema = this.schemaStore.get(refUrl);
+			var schema = this.schemaStore.get(refUrl, null, true);
 			if (!schema) {
-				this.missing[refUrl] = true;
+				if (this.schemaStore.missing(refUrl)) {
+					this.missingMap[refUrl] = true;
+				}
 				return {"description": "Missing schema: " + refUrl, placeholder: true};
 			}
 			if (!schema.id) schema.id = normUrl(refUrl);
 			return this.getFullSchema(schema, haltUrls);
 		},
 		codeForUrl: function (url, requireUrl) {
-			var schema = this.getFullSchema(this.schemaStore.get(url));
+			var schema = this.schemaStore.get(url, null, true);
 			if (!schema) {
-				this.missing[url] = true;
+				if (this.schemaStore.missing(url)) {
+					this.missingMap[url] = true;
+				} else {
+					delete this.missingMap[url];
+					this.previouslyHandled[url] = true;
+				}
 				schema = {"description": "Missing schema: " + url};
+			} else if (typeof schema.$ref === 'string') {
+				this.aliases[url] = schema.$ref;
+				requireUrl(schema.$ref);
+				return;
 			} else {
 				this.previouslyHandled[url] = true;
+				delete this.missingMap[url];
 				url = schema.id || url;
 				this.previouslyHandled[url] = true;
+				delete this.missingMap[url];
 			}
 
 			var code = '/* Schema: ' + url.replace(/\*/g, '%2A') + ' */\n';
@@ -1005,7 +1100,7 @@
 				if (!this.schemaAcceptsType(schema, 'number') && (isNaN(divisor) || divisor%1 !== 0)) {
 					numberCode += 'if (' + valueExpr + '%1 !== 0) {\n';
 					numberCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.INVALID_TYPE) + ', params: {type: "number", expected: "integer"}, path:' + dataPathExpr + '}', true));
-					numberCode += '}';
+					numberCode += '}\n';
 				}
 				if (schema.multipleOf || schema.divisibleBy) {
 					numberCode += 'if ((' + valueExpr + '/' + JSON.stringify(divisor) + ')%1 !== 0) {\n';
@@ -1082,7 +1177,12 @@
 			return validation;
 		},
 		classes: function (superclass, request) {
-			var code = this.code();
+			console.log(this._codeInvalid, !!this._classes);
+			if (!this._codeInvalid && this._classes) {
+				console.log("Re-using old classes (no changes)");
+				return this._classes;
+			}
+			var code = this.justNowCode = this.code();
 			delete this._code;
 			var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
 			return this._classes = func(superclass, this._classes, request);

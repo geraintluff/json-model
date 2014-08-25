@@ -16,14 +16,11 @@ describe('JSON Schema validation:', function () {
 			it(test.description, function () {
 				var schema = test.schema;
 				
-				var generator = api.schema2js.Generator({schemaStore: schemaStore}).addSchema(schema, 'TestClass');
-				var classes = generator.classes();
-				var TestClass = classes.TestClass;
-				
+				var validator = api.validator(schema);
 				test.tests.forEach(function (dataTest) {
-					var validation = TestClass.validate(dataTest.data);
+					var validation = validator(dataTest.data);
 					if (dataTest.valid !== validation.valid) {
-						console.log(generator.code());
+//						console.log(validator.generator.code());
 					}
 					if (dataTest.valid) {
 						assert.isTrue(validation.valid, dataTest.description);

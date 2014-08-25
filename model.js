@@ -95,13 +95,58 @@
 	function requestFunction(params, callback) {
 		return suppliedRequestFunction(params, callback);
 	}
-	
-	var generator = api.generator = new schema2js.Generator({classes: false, assignment: true});
-	var generatedClasses = generator.classes(null, requestFunction);
-	api.EventEmitter = EventEmitter;
-	
 	api.setRequestFunction = function (func) {
 		suppliedRequestFunction = func || errorRequestFunction;
+	};
+	
+	var schemaStore = api.schemaStore = new schema2js.SchemaStore();
+	var generator = new schema2js.Generator({classes: false, assignment: true, schemaStore: schemaStore});
+	var generatedClasses = generator.classes(null, requestFunction);
+	api.validator = function (schema, callback) {
+		callback = callback || function () {};
+		if (typeof schema === 'string') {
+			generator.addSchema(schemaUrl);
+			var name = generator.classNameForUrl(schemaUrl);
+			var validator = function (data, dataPath) {
+				if (generatedClasses[name]) {
+					return generatedClasses[name].validate(data, dataPath);
+				} else {
+					return {valid: true, schemas: {'': schema}};
+				}
+			};
+			whenSchemasFetched(function () {
+				callback(null, validator);
+			});
+			return validator;
+		} else {
+			var anonymousGen = new schema2js.Generator({classes: false, assignment: true});
+			var className = 'AnonymousSchema';
+			anonymousGen.addSchema(schema, className);
+			var classes = anonymousGen.classes();
+			var validator = classes[className].validate;
+			validator.generator = anonymousGen;
+
+			var missing = anonymousGen.missing();
+			// This block goes first, because if we actually have all the schemas already, it might trigger a sychronous regeneration
+			whenSchemasFetched(function () {
+				missing.forEach(function (url) {
+					var className = generator.classNameForUrl(url);
+					classes[anonymousGen.classNameForUrl(url)] = generatedClasses[className];
+				});
+				callback(null, validator);
+			});
+			missing.forEach(function (url) {
+				if (generator.missing(url)) {
+					generator.addSchema(url);
+				}
+				var className = generator.classNameForUrl(url);
+				console.log('Merge:', className, generatedClasses[className], url);
+				if (generatedClasses[className]) {
+					classes[anonymousGen.classNameForUrl(url)] = generatedClasses[className];
+				}
+			});
+			return validator;
+		}
 	};
 	
 	function resolvePointer(path, valueTarget) {
@@ -378,21 +423,30 @@
 	var pendingRequests = {};
 	var requestErrors = {};
 	var whenAllSchemasFetchedCallbacks = [];
-	function checkSchemasFetched() {
-		if (generator.missingSchemas().length == 0) {
+	function checkSchemasFetched(skipCallbacks) {
+		if (skipCallbacks) console.log('missing', generator.missing());
+		if (generator.schemaStore.missing().length == 0) {
+			console.log("Regenerating classes");
 			generatedClasses = generator.classes(null, requestFunction);
-			while (whenAllSchemasFetchedCallbacks.length) {
+			while (!skipCallbacks && whenAllSchemasFetchedCallbacks.length) {
 				var callback = whenAllSchemasFetchedCallbacks.shift();
 				callback();
 			}
 		}
 	}
 	api.schemasFetched = function () {
-		return !generator.missingSchemas().length;
+		return !generator.missing().length;
 	};
 	var whenSchemasFetched = api.whenSchemasFetched = function whenSchemasFetched(callback) {
 		whenAllSchemasFetchedCallbacks.push(callback);
-		generator.missingSchemas().forEach(function (missingUrl) {
+		generator.missing().forEach(function (missingUrl) {
+			if (!schemaStore.missing(missingUrl)) {
+				console.log("Already have", missingUrl);
+				generator.addSchema(missingUrl, schemaStore.get(missingUrl) || {});
+				return;
+			}
+			console.log("Missing (to be fetched)", missingUrl);
+		
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
 			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
@@ -405,6 +459,8 @@
 				checkSchemasFetched();
 			});
 		});
+		// We might have all the schemas anyway, but need a refresh, so regenerate the schemas only
+		checkSchemasFetched(true);
 		setTimeout(checkSchemasFetched, 10);
 	}
 	

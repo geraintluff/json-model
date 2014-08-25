@@ -61,8 +61,11 @@ describe('Basic shape', function () {
 		};
 		
 		var generator = api.Generator().addSchema('/demo', schema, 'Demo');
-		var missing = generator.missingSchemas();
+		var missing = generator.missing();
 		assert.deepEqual(missing, ['/schemas/bar'])
+		assert.isTrue(generator.missing('/schemas/bar'));
+		assert.isFalse(generator.missing('/demo'));
+		assert.isTrue(generator.missing('/somewhere/else'));
 	});
 	
 	it('assigns properties', function () {
