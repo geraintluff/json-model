@@ -44,14 +44,12 @@ describe('Two-stage generation', function () {
 
 		var generator = api.Generator({assignment: true}).addSchema('/schemas/demo', schema, 'Demo');
 		var classes1 = generator.classes();
-		console.log('code:', generator.justNowCode);
 		var Demo = classes1.Demo;
 		
 		generator.addSchema('/schemas/foo', {type: 'integer'}, 'Foo');
 		
 		console.log('generator.schemaStore', generator.schemaStore);
 		var classes2 = generator.classes();
-		console.log('code:', generator.justNowCode);
 		assert.equal(Demo, classes2.Demo);
 		
 		var validation1 = Demo.validate({foo: "hello"});

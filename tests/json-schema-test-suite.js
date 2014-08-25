@@ -4,8 +4,7 @@ var fs = require('fs'), path = require('path');
 
 var testDir = path.join(__dirname, 'json-schema-test-suite/tests/draft4');
 
-var schemaStore = new api.schema2js.SchemaStore();
-schemaStore.add(require('./draft-04-schema.json'));
+api.schemaStore.add(require('./draft-04-schema.json'));
 
 describe('JSON Schema validation:', function () {
 	function createTests(filename) {
@@ -20,7 +19,7 @@ describe('JSON Schema validation:', function () {
 				test.tests.forEach(function (dataTest) {
 					var validation = validator(dataTest.data);
 					if (dataTest.valid !== validation.valid) {
-//						console.log(validator.generator.code());
+						console.log(validator.generator.justNowCode);
 					}
 					if (dataTest.valid) {
 						assert.isTrue(validation.valid, dataTest.description);

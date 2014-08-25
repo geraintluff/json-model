@@ -226,7 +226,6 @@
 			};
 		},
 		coerce: function (element, dataModel, merge) {
-			console.log('Coercing ' + element.tagName + ' to ' + this.html(element.tagName));
 			if (!merge) {
 				var match = this.match(element);
 				if (!match.score) throw new Error('Cannot coerce un-matching element');
@@ -349,7 +348,6 @@
 		}
 		this.bind = bindObj.bind;
 		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
-			console.log('Should update: ' + model.pointer() + ' (' + pointerPath + ')');
 			return !pointerPath;
 		};
 	}
@@ -528,7 +526,6 @@
 
 				// Only call 'bind' once, as it will probably set up callbacks etc.
 				if (binding.bind) {
-					console.log("Binding " + element.tagName);
 					binding.bind(thisModel, element);
 				}
 			};

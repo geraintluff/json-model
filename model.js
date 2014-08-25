@@ -127,6 +127,13 @@
 			validator.generator = anonymousGen;
 
 			var missing = anonymousGen.missing();
+			// Make sure the main generator will have/fetch all the appropriate schemas
+			missing.forEach(function (url) {
+				if (generator.missing(url)) {
+					generator.addSchema(url);
+				}
+			});
+			
 			// This block goes first, because if we actually have all the schemas already, it might trigger a sychronous regeneration
 			whenSchemasFetched(function () {
 				missing.forEach(function (url) {
@@ -136,11 +143,7 @@
 				callback(null, validator);
 			});
 			missing.forEach(function (url) {
-				if (generator.missing(url)) {
-					generator.addSchema(url);
-				}
 				var className = generator.classNameForUrl(url);
-				console.log('Merge:', className, generatedClasses[className], url);
 				if (generatedClasses[className]) {
 					classes[anonymousGen.classNameForUrl(url)] = generatedClasses[className];
 				}
@@ -424,9 +427,7 @@
 	var requestErrors = {};
 	var whenAllSchemasFetchedCallbacks = [];
 	function checkSchemasFetched(skipCallbacks) {
-		if (skipCallbacks) console.log('missing', generator.missing());
 		if (generator.schemaStore.missing().length == 0) {
-			console.log("Regenerating classes");
 			generatedClasses = generator.classes(null, requestFunction);
 			while (!skipCallbacks && whenAllSchemasFetchedCallbacks.length) {
 				var callback = whenAllSchemasFetchedCallbacks.shift();
@@ -439,13 +440,8 @@
 	};
 	var whenSchemasFetched = api.whenSchemasFetched = function whenSchemasFetched(callback) {
 		whenAllSchemasFetchedCallbacks.push(callback);
-		generator.missing().forEach(function (missingUrl) {
-			if (!schemaStore.missing(missingUrl)) {
-				console.log("Already have", missingUrl);
-				generator.addSchema(missingUrl, schemaStore.get(missingUrl) || {});
-				return;
-			}
-			console.log("Missing (to be fetched)", missingUrl);
+		schemaStore.missing().forEach(function (missingUrl) {
+			generator.addSchema(missingUrl);
 		
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;

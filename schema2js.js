@@ -463,17 +463,12 @@
 			url = (typeof url === 'string') ? url : (Math.random().toString().substring(2) + 'anonymous');
 			url = normUrl(url || '');
 			var baseUrl = url.replace(/#.*/, '');
+			delete this.previouslyHandled[url]; // Force a re-compute
 			if (typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
-				if (this.previouslyHandled[baseUrl]) {
-					throw new Error('Re-adding something that has already been processed');
-				}
-			} else if (!name) {
+			} else {
 				this.missingMap[baseUrl] = true;
-				if (this.previouslyHandled[baseUrl]) {
-					throw new Error('Re-adding something that has already been processed');
-				}
-				name = schema;
+				if (!name) name = schema;
 			}
 			this.classNames[url] = name || this.classNames[url] || "";
 			this.classVarForUrl(url); // reserves an appropriate variable name
@@ -481,10 +476,15 @@
 		},
 		missing: function (url) {
 			if (typeof url !== 'string') {
-				return Object.keys(this.missingMap);
+				return this.schemaStore.missing();
+				var result = Object.keys(this.missingMap);
+				this.schemaStore.missing().forEach(function (url) {
+					if (result.indexOf(url) === -1) result.push(url);
+				});
+				return result;
 			} else {
 				var baseUrl = url.replace(/#.*/, '');
-				return this.missingMap[baseUrl] || this.schemaStore.missing(baseUrl);
+				return !this.previouslyHandled[normUrl(url)] && !this.previouslyHandled[baseUrl];
 			}
 		},
 		code: function () {
@@ -634,6 +634,7 @@
 				if (this.schemaStore.missing(url)) {
 					this.missingMap[url] = true;
 				} else {
+					// It's resolved properly, it's just empty
 					delete this.missingMap[url];
 					this.previouslyHandled[url] = true;
 				}
@@ -1177,12 +1178,10 @@
 			return validation;
 		},
 		classes: function (superclass, request) {
-			console.log(this._codeInvalid, !!this._classes);
 			if (!this._codeInvalid && this._classes) {
-				console.log("Re-using old classes (no changes)");
 				return this._classes;
 			}
-			var code = this.justNowCode = this.code();
+			var code = this.code();
 			delete this._code;
 			var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
 			return this._classes = func(superclass, this._classes, request);
