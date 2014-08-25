@@ -24,7 +24,7 @@ module.exports = function (grunt) {
 			this.validatorGenerator = validatorGenerator;
 		}
 		Validator.prototype = {
-			runTests: function (tests, repeats) {
+			runTests: function (tests, targetMs) {
 				var thisValidator = this;
 				var testSetups = tests.map(function (test) {
 					return {
@@ -33,22 +33,25 @@ module.exports = function (grunt) {
 					};
 				});
 				var start = Date.now();
+				var end = start + targetMs;
 				var correct = 0, total = 0;
-				testSetups.forEach(function (testSetup) {
-					var validator = testSetup.validator;
-					var data = testSetup.test.data;
-					var shouldBeValid = testSetup.test.valid;
-					for (var i = 0; i < repeats; i++) {
+				var repeats = 0;
+				while (Date.now() < end) {
+					repeats++;
+					testSetups.forEach(function (testSetup) {
+						var validator = testSetup.validator;
+						var data = testSetup.test.data;
+						var shouldBeValid = testSetup.test.valid;
+
 						var valid = validator(data);
 						if (valid === shouldBeValid) {
 							correct++;
-						} else {
-							//console.log(test);
 						}
-					}
-					total += repeats;
-				});
+						total++;
+					});
+				}
 				return {
+					repeats: repeats,
 					name: this.name,
 					ms: (Date.now() - start)/repeats,
 					score: correct/total*100
@@ -73,7 +76,7 @@ module.exports = function (grunt) {
 
 		/*******/
 
-		var repeats = 10;
+		var targetMs = 1000*20;
 		
 		var jsonModel = require('./');
 		jsonModel.schemaStore.add(require('./tests/draft-04-schema.json'));
@@ -107,12 +110,12 @@ module.exports = function (grunt) {
 			};
 		}));
 		
-		var referenceResult = reference.runTests(tests, repeats);
+		var referenceResult = reference.runTests(tests, targetMs);
 		referenceResult.relativeTime = 1;
 		console.log(referenceResult);
 		console.log('--------------------');
 		var results = alternatives.map(function (validator) {
-			var result = validator.runTests(tests, repeats);
+			var result = validator.runTests(tests, targetMs);
 			result.relativeTime = result.ms/referenceResult.ms;
 			console.log(result);
 			return result;
@@ -128,7 +131,7 @@ module.exports = function (grunt) {
 					relativeTime: {title: 'Relative speed', type: 'number'},
 					score: {title: 'Test pass rate', type: 'number', format: 'percent'}
 				},
-				propertyOrder: ['name', 'time', 'relativeTime', 'score']
+				propertyOrder: ['name', 'time', 'relativeTime', 'score', 'repeats']
 			}
 		});
 		jsonModel.bindings.add({
@@ -137,7 +140,7 @@ module.exports = function (grunt) {
 				schema: 'tmp://comparison'
 			},
 			html: function (model) {
-				var html = '<tr>' + ['Setup', 'Time (ms)', 'Relative time', 'Test score'].map(function (title) {
+				var html = '<tr>' + ['Setup', 'Time (ms)', 'Relative time', 'Test score', 'Repeats'].map(function (title) {
 					return '<th style="background-color: #DDD;">' + title.escapeHtml() + '</th>';
 				}).join('') + '</tr>';
 				return html + model.map(function (item) {
@@ -157,10 +160,10 @@ module.exports = function (grunt) {
 			}
 		});
 		jsonModel.bindings.add({
-			canBind: ['tmp://comparison#/items/properties/relativeTime', 'tmp://comparison#/items/properties/score'],
+			canBind: {type: 'number'},
 			html: function (model) {
-				var value = Math.round(model.get()*100)/100;
-				if (model.hasSchema('tmp://comparisons#/items/properties/score')) {
+				var value = Math.round(model.get()*10)/10;
+				if (model.hasSchema('tmp://comparison#/items/properties/score')) {
 					value += '%';
 				}
 				return value;

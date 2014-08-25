@@ -62,7 +62,7 @@ The UI bindings are mostly HTML-based.
 
 #### In the browser
 
-```json
+```javascript
 model.bindTo(element);
 ```
 
@@ -70,7 +70,7 @@ Most bindings will output their interaces as HTML.  The supplied HTML is not dum
 
 #### On the server
 
-```json
+```javascript
 var html = model.html(tag, attrs);
 model.html(tag, attrs, function (error, html) {...});
 ```
@@ -128,7 +128,7 @@ Schemas are compiled into validators (generating custom JS code), which has an u
 Here's a table of measured times for various validation setups (using the [JSON Schema Test Suite](https://github.com/json-schema/JSON-Schema-Test-Suite)) on Node:
 
 <!--SPEEDSTART-->
-<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th></tr><tr><tr><td>json-model@0.2.2 (precompiled)</td><td>17.3</td><td>1</td><td>97.34</td></tr></tr><tr><tr><td>json-model@0.2.2 (compile and validate)</td><td>1728.4</td><td>99.91</td><td>96.81</td></tr></tr><tr><tr><td>tv4 (validateResult)</td><td>187.7</td><td>10.85</td><td>94.68</td></tr></tr><tr><tr><td>tv4 (validateMultiple)</td><td>203.8</td><td>11.78</td><td>94.68</td></tr></tr></table>
+<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th><th style="background-color: #DDD;">Repeats</th></tr><tr><tr><td>json-model@0.2.2 (precompiled)</td><td>3.2</td><td>1</td><td>97.3%</td></tr></tr><tr><tr><td>json-model@0.2.2 (compile and validate)</td><td>1643.9</td><td>512.9</td><td>96.8%</td></tr></tr><tr><tr><td>tv4 (validateResult)</td><td>150.4</td><td>46.9</td><td>94.7%</td></tr></tr><tr><tr><td>tv4 (validateMultiple)</td><td>168.3</td><td>52.5</td><td>94.7%</td></tr></tr></table>
 <!--SPEEDEND-->
 
 As you can see, the first time you compile a validator it is much slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema ten or more times, then this should end up faster.
