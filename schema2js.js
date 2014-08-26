@@ -420,6 +420,7 @@
 		this.config = {
 			directMethods: config.directMethods !== false,
 			validation: config.validation !== false,
+			subErrors: (config.subErrors !== false) && true,
 			unicodeLength: config.unicodeLength !== false,
 			assignment: config.assignment || false,
 			classes: (config.classes !== false) && true
@@ -885,8 +886,15 @@
 				}
 				if (schema.oneOf) {
 					validation += 'var oneOfPassCount = 0;\n';
+					if (this.config.subErrors) {
+						validation += 'var oneOfSubErrors = [];\n';
+					}
 					schema.oneOf.forEach(function (subSchema, index) {
-						validation += 'errors = [];\n'
+						if (this.config.subErrors) {
+							validation += 'oneOfSubErrors[' + index + '] = errors = [];\n'
+						} else {
+							validation += 'errors = [];\n'
+						}
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
@@ -916,10 +924,11 @@
 					validation += '}\n';
 				}
 				if (schema.oneOf) {
+					var paramsExpr = this.config.subErrors ? '{errors: oneOfSubErrors}' : '{}';
 					validation += 'if (!oneOfPassCount) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
 					validation += '} else if (oneOfPassCount > 1) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MULTIPLE) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MULTIPLE) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
 					validation += '}\n';
 				}
 			}

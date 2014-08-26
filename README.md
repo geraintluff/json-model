@@ -1,6 +1,6 @@
 # JSON Models
 
-This package handles JSON data and associated JSON Schemas.  This includes [fast schema validation/assignment](#speed-table), and a wrapper class that adds events, and HTML bindings for UI/display (HTML on server-side, DOM in browser with shared code).
+This package handles JSON data and associated JSON Schemas.  This includes [fast schema validation/assignment](#speed-table), and a wrapper class that adds events plus HTML bindings for UI/display (HTML on server-side, DOM in browser with shared code).
 
 ## API
 
@@ -25,6 +25,13 @@ console.log(result.errors);
 console.log(result.schemas);
 ```
 
+If some schemas need to be fetched, then the validator will not be completely functional at first.  You can supply a callback function to be notified when the validator is ready (which also supplies the same validator as a result):
+
+```javascript
+JsonModel.validator(schema, function (error, validator) {
+});
+```
+
 ### Setting the request function
 
 This module has the ability to fetch schemas/data, but it needs you to supply an appropriate request function:
@@ -46,6 +53,8 @@ You can create a JsonModel wrapper directly - everything except the initial valu
 var model = JsonModel.create(jsonData, url, schemas, callback);
 ```
 
+If `callback` is provided, it will be called (with two arguments `error` and `model`) after all relevant schemas have loaded.  The `model` argument will be the same as the return value of `create()`.
+
 You can also open remote data: (`hintSchemas` is an optional set of schemas to use if the remote resource doesn't supply its own)
 
 ```javascript
@@ -54,7 +63,7 @@ JsonModel.open('http://example.com/json', hintSchemas, function (error, model) {
 
 In both cases, the callback is only called when all the schemas have been loaded.
 
-The `schemas`/`hintSchemas` arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.
+The `schemas`/`hintSchemas` arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.  However, bear in mind that if `schemas` is supplied as a string in `create()`, then `url` must be supplied (or `null`) otherwise it will interpret the schema URL as the data URL.
 
 ### UI bindings
 
