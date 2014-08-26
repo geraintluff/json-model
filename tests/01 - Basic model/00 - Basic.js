@@ -73,7 +73,9 @@ describe('Basic model', function () {
 					type: 'object',
 					properties: {
 						'foo': {type: null},
-						'bar': {"$ref": schemaUrl2}
+						'bar': {"$ref": schemaUrl2},
+						'baz': {"$ref": '#/does/not/exist'},
+						'boop': {"$ref": schemaUrl2 + '#/does/not/exist/either'}
 					}
 				});
 			}, 10);
@@ -89,7 +91,8 @@ describe('Basic model', function () {
 						type: 'object',
 						properties: {
 							'foo': {type: null},
-							'bar': {"$ref": schemaUrl2}
+							'bar': {"$ref": schemaUrl2},
+							'baz': {"$ref": '#/does/not/exist'}
 						}
 					});
 
@@ -97,6 +100,7 @@ describe('Basic model', function () {
 					assert.deepEqual(model.schemas().length, 1, 'one schema assigned');
 					assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo'], 'foo schema assigned');
 					assert.deepEqual(model.errors().length, 0, 'no errors');
+					assert.deepEqual(api.schemaStore.missing(), []); // Non-existent fragments to not affect
 					done();
 				}, 10);
 			});

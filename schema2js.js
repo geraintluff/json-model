@@ -181,8 +181,7 @@
 				for (var i = 0; i < parts.length; i++) {
 					var component = parts[i].replace(/~1/g, "/").replace(/~0/g, "~");
 					if (schema[component] === undefined) {
-						schema = undefined;
-						break;
+						return undefined;
 					}
 					schema = schema[component];
 				}
@@ -236,7 +235,7 @@
 	};
 	
 	function indent(string) {
-		return ('\t' + string.replace(/\n/g, '\n\t')).replace(/\t*$/, '');
+		return ('\t' + string.replace(/\n/g, '\n\t')).replace(/\t+$/, '');
 	}
 	function normUrl(url) {
 		if (url.split('#')[1] === '') return url.split('#')[0];
@@ -467,7 +466,11 @@
 			url = (typeof url === 'string') ? url : (Math.random().toString().substring(2) + 'anonymous');
 			url = normUrl(url || '');
 			var baseUrl = url.replace(/#.*/, '');
-			delete this.previouslyHandled[url]; // Force a re-compute
+			if (this.previouslyHandled[url]) {
+				// Force a re-compute
+				throw new Error('Forcing a re-compute of ' + url);
+				delete this.previouslyHandled[url];
+			}
 			if (schema && typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
 			} else {
