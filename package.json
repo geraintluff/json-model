@@ -1,6 +1,6 @@
 {
   "name": "json-model",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "JSON models using JSON Schemas, events and UI bindings",
   "main": "model-bind.js",
   "scripts": {
