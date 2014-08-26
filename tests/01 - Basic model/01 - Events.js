@@ -2,6 +2,10 @@ var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Model events', function () {
+	afterEach(function(){
+		api.clean();
+	});
+
 	it('trigger change', function () {
 		var model = api.create({foo:'bar'});
 		

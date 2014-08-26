@@ -2,6 +2,10 @@ var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Model iterators', function () {
+	afterEach(function(){
+		api.clean();
+	});
+
 	it('items', function () {
 		var model = api.create(['A', 'B', 'C']);
 		

@@ -69,21 +69,29 @@ describe('Basic shape', function () {
 		assert.isTrue(generator.missing('/somewhere/else'), 'missing /somewhere/else');
 	});
 	
-	it('assigns properties', function () {
+	it('lists missing references from fetched schema', function () {
 		var schema = {
+			"title": "Demo schema",
+			"description": "A simple schema to test the library",
 			"type": "object",
 			"properties": {
 				"foo": {"type": "integer"},
-				"bar": {"type": "string"}
+				"bar": {"$ref": "/schemas/bar"}
 			}
 		};
-
-		var classes = api.Generator().addSchema('/demo', schema, 'Demo').classes();
-		var Demo = classes.Demo;
 		
-		var demo = Demo({foo:1, bar:'baz', ignoredProperty:true});
+		var generator = api.Generator().addSchema('/demo');
 
-		assert.deepEqual(demo, {foo:1, bar:'baz'});
+		var missing = generator.missing();
+		assert.deepEqual(missing, ['/demo'], '/demo missing');
+
+		generator.addSchema('/demo', schema);
+		assert.deepEqual(missing, ['/demo'], '/demo still missing');
+
+		var code = generator.code();
+		assert.isTrue(generator.missing('/schemas/bar'), 'missing /schemas/bar');
+		assert.isFalse(generator.missing('/demo'), 'missing /demo');
+		assert.isTrue(generator.missing('/somewhere/else'), 'missing /somewhere/else');
 	});
 
 	it('assigns additionalProperties', function () {

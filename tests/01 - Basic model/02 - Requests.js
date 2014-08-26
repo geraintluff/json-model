@@ -2,6 +2,10 @@ var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Requests', function () {
+	afterEach(function(){
+		api.clean();
+	});
+
 	it('api.open', function (done) {
 		api.setRequestFunction(function (params, callback) {
 			assert.deepEqual(params.url, 'http://example.com/test');
@@ -15,8 +19,7 @@ describe('Requests', function () {
 		api.open('http://example.com/test', function (error, model) {
 			assert.isNull(error);
 			assert.isTrue(api.is(model));
-			
-			api.setRequestFunction(null);
+
 			done();
 		});
 	});
@@ -40,7 +43,6 @@ describe('Requests', function () {
 			assert.deepEqual(errors.length, 1);
 			assert.deepEqual(errors[0].code, api.ErrorCodes.SCHEMA_FETCH_ERROR);
 			
-			api.setRequestFunction(null);
 			done();
 		});
 	});

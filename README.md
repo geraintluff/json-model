@@ -36,7 +36,7 @@ JsonModel.setRequestFunction(function (params, callback) {
 });
 ```
 
-The arguments to the callback are `error`, `jsonData` (the fetched data, JSON-decoded), and `headers` (an *object* representing the headers).  Non-JSON responses do not need to be supported.
+The arguments to the callback are `error`, `jsonData` (the fetched data, JSON-decoded), and `headers` (an *object* representing the headers).  `headers` may be omitted (e.g. when loading from a file).  Non-JSON responses do not need to be supported.
 
 ### Creating/opening data
 
@@ -128,10 +128,10 @@ Schemas are compiled into validators (generating custom JS code), which has an u
 Here's a table of measured times for various validation setups (using the [JSON Schema Test Suite](https://github.com/json-schema/JSON-Schema-Test-Suite)) on Node:
 
 <!--SPEEDSTART-->
-<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th><th style="background-color: #DDD;">Repeats</th></tr><tr><tr><td>json-model@0.2.2 (precompiled)</td><td>2.5</td><td>1</td><td>100%</td><td>7917</td></tr></tr><tr><tr><td>json-model@0.2.2 (compile and validate)</td><td>333.4</td><td>132</td><td>100%</td><td>60</td></tr></tr><tr><tr><td>tv4 (validateResult)</td><td>171.2</td><td>67.8</td><td>94.7%</td><td>117</td></tr></tr><tr><tr><td>tv4 (validateMultiple)</td><td>175.2</td><td>69.4</td><td>94.7%</td><td>115</td></tr></tr></table>
+<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th><th style="background-color: #DDD;">Repeats</th></tr><tr><tr><td>json-model@0.2.4 (precompiled)</td><td>0.3</td><td></td><td>100%</td><td>9653</td></tr></tr><tr><tr><td>json-model@0.2.4 (compile and validate)</td><td>50.8</td><td>145.3</td><td>100%</td><td>67</td></tr></tr><tr><tr><td>tv4 (validateResult)</td><td>27.9</td><td>79.7</td><td>94.7%</td><td>122</td></tr></tr><tr><tr><td>tv4 (validateMultiple)</td><td>28.4</td><td>81.1</td><td>94.7%</td><td>119</td></tr></tr><tr><tr><td>json-model@0.2.0 (sanity check)</td><td>0.4</td><td>1.1</td><td>100%</td><td>8942</td></tr></tr><tr><tr><td>json-model@0.2.4 (precompiled)</td><td>0.4</td><td>1</td><td>100%</td><td>9585</td></tr></tr></table>
 <!--SPEEDEND-->
 
-As you can see, the first time you compile a validator it is much slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema ten or more times, then this should end up faster.
+As you can see, the first time you compile a validator it is definitely slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema ten or more times, then this should end up faster.
 
 ## Schema assignment
 

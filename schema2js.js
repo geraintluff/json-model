@@ -69,7 +69,7 @@
 	var SchemaStore = api.SchemaStore = function SchemaStore(parent) {
 		this.schemas = parent ? Object.create(parent.schemas) : {};
 		this.missingUrls = parent ? Object.create(parent.missingUrls) : {};
-		this.missing = function (url) {
+		this.missing = function (url, noAdd) {
 			if (url === undefined) {
 				if (!parent) {
 					return Object.keys(this.missingUrls);
@@ -88,6 +88,9 @@
 				if (this.schemas[url]) return false;
 				var baseUrl = url.replace(/#.*/, '');
 				var result = (this.missingUrls[baseUrl] || !(baseUrl in this.schemas)) && (!parent || parent.missing(url));
+				if (result && !noAdd) {
+					this.missingUrls[baseUrl] = true;
+				}
 				return result;
 			}
 		};

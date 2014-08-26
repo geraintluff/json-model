@@ -90,7 +90,7 @@
 	};
 	api.EventEmitter = EventEmitter;
 	
-	var errorRequestFunction = function () {throw new Error('Requests not supported');};
+	var errorRequestFunction = function (params) {throw new Error('Requests not enabled - try JsonModel.setRequestFunction(func):\n' + JSON.stringify(params));};
 	var suppliedRequestFunction = errorRequestFunction;
 	function requestFunction(params, callback) {
 		return suppliedRequestFunction(params, callback);
@@ -99,9 +99,15 @@
 		suppliedRequestFunction = func || errorRequestFunction;
 	};
 	
-	var schemaStore = api.schemaStore = new schema2js.SchemaStore();
-	var generator = new schema2js.Generator({classes: false, assignment: true, schemaStore: schemaStore});
-	var generatedClasses = generator.classes(null, requestFunction);
+	var schemaStore, generator, generatedClasses;
+	var clean = api.clean = function setupClean() {
+		schemaStore = api.schemaStore = new schema2js.SchemaStore();
+		generator = new schema2js.Generator({classes: false, assignment: true, schemaStore: schemaStore});
+		generatedClasses = generator.classes(null, requestFunction);
+		api.setRequestFunction(null);
+	};
+	clean();
+	
 	api.validator = function (schema, callback) {
 		callback = callback || function () {};
 		var transform = function (validatorErrors) {
@@ -128,6 +134,10 @@
 				if (generatedClasses[name]) {
 					return generatedClasses[name].validationErrors(data, dataPath, schemaMap);
 				} else {
+					if (schemaMap) {
+						schemaMap[''] = schemaMap[''] || [];
+						schemaMap[''].push(schema);
+					}
 					return [];
 				}
 			};
@@ -495,8 +505,13 @@
 	var requestErrors = {};
 	var whenAllSchemasFetchedCallbacks = [];
 	function checkSchemasFetched(skipCallbacks) {
-		if (generator.schemaStore.missing().length === 0) {
+		var pendingUrls = Object.keys(pendingRequests);
+		if (pendingUrls.length === 0) {
 			generatedClasses = generator.classes(null, requestFunction);
+			if (generator.missing().length) {
+				// induce another round of requests
+				return whenSchemasFetched();
+			}
 			while (!skipCallbacks && whenAllSchemasFetchedCallbacks.length) {
 				var callback = whenAllSchemasFetchedCallbacks.shift();
 				callback();
@@ -507,18 +522,26 @@
 		return !generator.missing().length;
 	};
 	var whenSchemasFetched = api.whenSchemasFetched = function whenSchemasFetched(callback) {
-		whenAllSchemasFetchedCallbacks.push(callback);
-		schemaStore.missing().forEach(function (missingUrl) {
-			generator.addSchema(missingUrl);
-		
+		if (callback) {
+			whenAllSchemasFetchedCallbacks.push(callback);
+		}
+		generator.missing().forEach(function (missingUrl) {
+			var baseUrl = missingUrl.replace(/#.*/, '');
+			if (!schemaStore.missing(missingUrl) || !schemaStore.missing(baseUrl)) {
+				return checkSchemasFetched(true);
+			}
+			missingUrl = baseUrl;
+			
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
 			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
 				if (error) {
-					if (typeof console !== 'undefined' && console.error) console.error(error);
+					if (typeof console !== 'undefined' && console.error) {
+						console.error('Error fetching ' + missingUrl + ':', error);
+					}
 					requestErrors[missingUrl] = error;
 				}
-				pendingRequests[missingUrl] = false;
+				delete pendingRequests[missingUrl];
 				generator.addSchema(missingUrl, data || {});
 				checkSchemasFetched();
 			});

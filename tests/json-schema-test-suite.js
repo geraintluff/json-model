@@ -4,9 +4,12 @@ var fs = require('fs'), path = require('path');
 
 var testDir = path.join(__dirname, 'json-schema-test-suite/tests/draft4');
 
-api.schemaStore.add(require('./draft-04-schema.json'));
-
 describe('JSON Schema validation:', function () {
+	// Add the meta-schema before each test
+	beforeEach(function () {
+		api.schemaStore.add(require('./draft-04-schema.json'));
+	});
+	
 	function createTests(filename) {
 		filename = path.join(testDir, filename);
 		var tests = JSON.parse(fs.readFileSync(filename, {encoding: 'utf-8'}));
@@ -18,7 +21,7 @@ describe('JSON Schema validation:', function () {
 				var validator = api.validator(schema);
 				test.tests.forEach(function (dataTest) {
 					var validation = validator(dataTest.data);
-					if (dataTest.valid !== validation.valid) {
+					if (dataTest.valid !== validation.valid && validator.generator) {
 						console.log(validator.generator.justNowCode);
 					}
 					if (dataTest.valid) {

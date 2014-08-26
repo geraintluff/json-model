@@ -24,7 +24,7 @@ module.exports = function (grunt) {
 			this.validatorGenerator = validatorGenerator;
 		}
 		Validator.prototype = {
-			runTests: function (tests, targetMs) {
+			runTests: function (tests, targetMs, maxRepeats) {
 				var thisValidator = this;
 				var testSetups = tests.map(function (test) {
 					return {
@@ -36,7 +36,7 @@ module.exports = function (grunt) {
 				var end = start + targetMs;
 				var correct = 0, total = 0;
 				var repeats = 0;
-				while (Date.now() < end) {
+				while (Date.now() < end && !(repeats >= maxRepeats)) {
 					repeats++;
 					testSetups.forEach(function (testSetup) {
 						var validator = testSetup.validator;
@@ -77,12 +77,10 @@ module.exports = function (grunt) {
 		/*******/
 
 		var targetMs = 1000*20;
+		var maxRepeats = 10000;
 		
 		var jsonModel = require('./');
 		jsonModel.schemaStore.add(require('./tests/draft-04-schema.json'));
-		jsonModel.setRequestFunction(function (params, callback) {
-			callback(null, {});
-		});
 		var reference = new Validator('json-model@' + packageInfo.version + ' (precompiled)', function (schema) {
 			var validator = jsonModel.validator(schema);
 			return function (data) {
@@ -91,12 +89,14 @@ module.exports = function (grunt) {
 		});
 		
 		var alternatives = [];
+		// Include compilation (to measure compilation time)
 		alternatives.push(new Validator('json-model@' + packageInfo.version + ' (compile and validate)', function (schema) {
 			return function (data) {
 				var validator = jsonModel.validator(schema);
 				return validator(data).valid;
 			};
 		}));
+		// tv4
 		alternatives.push(new Validator('tv4 (validateResult)', function (schema) {
 			var tv4 = require('tv4');
 			return function (data) {
@@ -109,16 +109,36 @@ module.exports = function (grunt) {
 				return tv4.validateMultiple(data, schema).valid;
 			};
 		}));
+		// Old version (for reference)
+		var oldApi = require('json-model');
+		oldApi.schemaStore.add(require('./tests/draft-04-schema.json'));
+		var oldApiPackageInfo = require('json-model/package.json');
+		alternatives.push(new Validator('json-model@' + oldApiPackageInfo.version + ' (sanity check)', function (schema) {
+			var validator = oldApi.validator(schema);
+			return function (data) {
+				return validator(data).valid
+			};
+		}));
+		alternatives.push(reference);
 		
-		var referenceResult = reference.runTests(tests, targetMs);
+		var referenceResult = reference.runTests(tests, targetMs, maxRepeats);
+		var targetMs = Math.round(referenceResult.ms*referenceResult.repeats);
 		referenceResult.relativeTime = 1;
 		console.log(referenceResult);
-		console.log('--------------------');
+		console.log('-------- target ms: ' + targetMs + ' --------');
 		var results = alternatives.map(function (validator) {
-			var result = validator.runTests(tests, targetMs);
-			result.relativeTime = result.ms/referenceResult.ms;
+			var result = validator.runTests(tests, targetMs, maxRepeats);
 			console.log(result);
 			return result;
+		});
+		
+		// Order might matter - try again at the end, and take the worse of the two
+		var secondReferenceResult = reference.runTests(tests, targetMs, maxRepeats);
+		if (secondReferenceResult.ms > referenceResult.ms) {
+			referenceResult = secondReferenceResult;
+		}
+		results.forEach(function (result) {
+			result.relativeTime = result.ms/referenceResult.ms;
 		});
 
 		jsonModel.schemaStore.add('tmp://comparison', {
