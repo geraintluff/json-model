@@ -15,12 +15,14 @@ describe('Basic model', function () {
 		assert.deepEqual(model.get('foo'), 'baz');
 	});
 	
-	it('has prop(), keys()', function () {
+	it('has prop(), keys(), has()', function () {
 		var model = api.create({foo:'bar'});
 		
 		assert.deepEqual(model.keys(), ['foo']);
 		assert.deepEqual(model.get('foo'), model.prop('foo').get());
 		assert.deepEqual(model.prop('foo').pointer(), '/foo');
+		assert.isTrue(model.has('foo'), 'has(foo)');
+		assert.isFalse(model.has('bar'), 'has(bar)');
 	});
 
 	it('has item(), length()', function () {

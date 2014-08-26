@@ -429,11 +429,18 @@
 			if (!value || Array.isArray(value) || typeof value !== 'object') return [];
 			return Object.keys(value);
 		},
+		has: function (pathSpec) {
+			return this.jsonType(pathSpec) !== 'undefined';
+		},
 		prop: function (key) {
 			return this._root.modelForPath(this._path + '/' + pointerEscape(key + ''));
 		},
-		props: function (callback) {
-			var keys = this.keys();
+		props: function (keys, callback) {
+			if (typeof keys === 'function') {
+				callback = keys;
+				keys = null;
+			}
+			keys = keys || this.keys();
 			for (var i = 0; i < keys.length; i++) {
 				callback(this.prop(keys[i]), keys[i]);
 			}
