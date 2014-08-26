@@ -865,8 +865,15 @@
 				}
 				if (schema.anyOf) {
 					validation += 'var anyOfPassCount = 0;\n';
+					if (this.config.subErrors) {
+						validation += 'var anyOfSubErrors = [];\n';
+					}
 					schema.anyOf.forEach(function (subSchema, index) {
-						validation += 'errors = [];\n'
+						if (this.config.subErrors) {
+							validation += 'anyOfSubErrors[' + index + '] = errors = [];\n'
+						} else {
+							validation += 'errors = [];\n'
+						}
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
@@ -919,8 +926,9 @@
 				}
 				validation += 'errors = actualErrors;\n';
 				if (schema.anyOf) {
+					var paramsExpr = this.config.subErrors ? '{errors: anyOfSubErrors}' : '{}';
 					validation += 'if (!anyOfPassCount) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: {}, path: ' + dataPathExpr + '}', true);
+					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
 					validation += '}\n';
 				}
 				if (schema.oneOf) {
