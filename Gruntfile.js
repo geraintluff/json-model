@@ -119,7 +119,6 @@ module.exports = function (grunt) {
 				return validator(data).valid
 			};
 		}));
-		alternatives.push(reference);
 		
 		var referenceResult = reference.runTests(tests, targetMs, maxRepeats);
 		var targetMs = Math.round(referenceResult.ms*referenceResult.repeats);
@@ -174,9 +173,9 @@ module.exports = function (grunt) {
 				schema: 'tmp://comparison#/items'
 			},
 			html: function (model) {
-				return '<tr>' + model.mapProps(['name', 'ms', 'relativeTime', 'score', 'repeats'], function (prop) {
+				return model.mapProps(['name', 'ms', 'relativeTime', 'score', 'repeats'], function (prop) {
 					return prop.html('td');
-				}).join('') + '</tr>';
+				}).join('');
 			}
 		});
 		jsonModel.bindings.add({
