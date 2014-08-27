@@ -22,6 +22,8 @@ describe('Requests', function () {
 
 			assert.deepEqual(model.httpStatus(), 200);
 			assert.deepEqual(model.httpHeaders(), {'x-foo': 'Bar'});
+			assert.deepEqual(model.httpHeader('not-present'), null);
+			assert.deepEqual(model.httpHeader('X-fOo'), 'Bar');
 			done();
 		});
 	});
