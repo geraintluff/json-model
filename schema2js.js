@@ -424,6 +424,7 @@
 			subErrors: (config.subErrors !== false) && true,
 			unicodeLength: config.unicodeLength !== false,
 			assignment: config.assignment || false,
+			trackMissing: config.trackMissing || false,
 			classes: (config.classes !== false) && true
 		};
 		this.classNames = {};
@@ -540,12 +541,12 @@
 					code += indent('return ' + propertyExpression('classes', aliasName) + '.validate(data);\n');
 					code += '};\n';
 					if (this.config.assignment) {
-						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path, schemaMap) {\n';
-						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path, schemaMap);\n');
+						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
+						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ');\n');
 						code += '};\n';
 					} else {
-						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path) {\n';
-						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path);\n');
+						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
+						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path' + (this.config.trackMissing ? ', missing' : '') + ');\n');
 						code += '};\n';
 					}
 				}
@@ -764,10 +765,10 @@
 			}.bind(this));
 			if (this.config.validation) {
 				if (this.config.assignment) {
-					code += classExpression + '.validationErrors = function (value, dataPath, schemaMap) {\n';
+					code += classExpression + '.validationErrors = function (value, dataPath, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
 					code += indent('schemaMap = schemaMap || {};\n');
 				} else {
-					code += classExpression + '.validationErrors = function (value, dataPath) {\n';
+					code += classExpression + '.validationErrors = function (value, dataPath' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
 				}
 				code += indent('dataPath = dataPath || "";\n');
 				code += indent('var errors = [];\n');
@@ -778,13 +779,16 @@
 				code += indent('return errors;\n');
 				code += '}\n';
 				code += classExpression + '.validate = function (value) {\n';
+				if (this.config.trackMissing) {
+					code += indent('var missing = {};\n');
+				}
 				if (this.config.assignment) {
 					code += indent('var schemaMap = {};\n');
-					code += indent('var errors = ' + classExpression + '.validationErrors(value, "", schemaMap);\n');
-					code += indent('return errors.length ? {valid: false, errors: errors, schemas: schemaMap} : {valid: true, schemas: schemaMap};\n');
+					code += indent('var errors = ' + classExpression + '.validationErrors(value, "", schemaMap' + (this.config.trackMissing ? ', missing' : '') + ');\n');
+					code += indent('return {valid: !errors.length, errors: errors, schemas: schemaMap' + (this.config.trackMissing ? ', missing: missing' : '') + '};\n');
 				} else {
-					code += indent('var errors = ' + classExpression + '.validationErrors(value);\n');
-					code += indent('return errors.length ? {valid: false, errors: errors} : {valid: true};\n');
+					code += indent('var errors = ' + classExpression + '.validationErrors(value, ""' + (this.config.trackMissing ? ', missing' : '') + ');\n');
+					code += indent('return {valid: !errors.length, errors: errors' + (this.config.trackMissing ? ', missing: missing' : '') + '};\n');
 				}
 				code += '}\n';
 			}
@@ -810,15 +814,21 @@
 				var classVar = this.classExprForUrl(schemaUrl);
 				requireUrl(schemaUrl);
 				if (this.config.assignment) {
-					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ', schemaMap)');
+					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ', schemaMap' + (this.config.trackMissing ? ', missing' : '') + ')');
 				} else {
-					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ')');
+					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + (this.config.trackMissing ? ', missing' : '') + ')');
 				}
 			}
 
 			var validation = '';
 			
 			var schemaUrlExpr = JSON.stringify(schemaUrl);
+
+			if (this.config.trackMissing && this.missing(schemaUrl)) {
+				validation += 'if (missing) {\n';
+				validation += indent('(missing[' + dataPathExpr + '] = missing[' + dataPathExpr + '] || []).push(' + schemaUrlExpr + ');\n');
+				validation += '}\n';
+			}
 			if (this.config.assignment) {
 				validation += 'if (!schemaMap[' + dataPathExpr + ']) {\n';
 				validation += indent('schemaMap[' + dataPathExpr + '] = [' + schemaUrlExpr + '];\n');

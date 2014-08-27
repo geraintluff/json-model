@@ -17,7 +17,7 @@ describe('Basic shape', function () {
 		var Demo = classes.Demo;
 
 		assert.isFunction(Demo);
-		assert.deepEqual(Demo.schemaUrl, '/demo');
+		assert.deepEqual(Demo.schema, '/demo');
 		assert.deepEqual(Demo.title, 'Demo schema');
 		assert.deepEqual(Demo.description, 'A simple schema to test the library');
 	});

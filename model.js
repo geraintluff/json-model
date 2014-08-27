@@ -102,7 +102,7 @@
 	var schemaStore, generator, generatedClasses;
 	var clean = api.clean = function setupClean() {
 		schemaStore = api.schemaStore = new schema2js.SchemaStore();
-		generator = new schema2js.Generator({classes: false, assignment: true, schemaStore: schemaStore});
+		generator = new schema2js.Generator({classes: false, assignment: true, trackMissing: true, schemaStore: schemaStore});
 		generatedClasses = generator.classes(null, requestFunction);
 		api.setRequestFunction(null);
 	};
