@@ -24,6 +24,13 @@ describe('JSON Schema validation:', function () {
 					if (dataTest.valid !== validation.valid && validator.generator) {
 						console.log(validator.generator.justNowCode);
 					}
+					if (!validation.valid) {
+						validation.errors.forEach(function (error) {
+							assert.isNumber(error.code, 'error code is present');
+							assert.isString(error.path, 'data path is present');
+							assert.isString(error.path, 'schema path is present');
+						});
+					}
 					if (dataTest.valid) {
 						assert.isTrue(validation.valid, dataTest.description);
 					} else {

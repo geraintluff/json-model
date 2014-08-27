@@ -12,7 +12,7 @@
 })(this, function (schema2js) {
 	var api = {};
 	api.schema2js = schema2js;
-	api.ErrorCodes = schema2js.ErrorCodes;
+	var ErrorCodes = api.ErrorCodes = schema2js.ErrorCodes;
 
 	function pointerEscape(key) {
 		return key.replace(/~/g, "~0").replace(/\//g, "~1");
@@ -196,6 +196,7 @@
 	function RootModel(initialValue, validatorFunctions) {
 		var value;
 		var schemaMap = {};
+		var missingSchemas = {};
 		var errors = [];
 		var pendingSchemaFetch = false;
 		
@@ -326,14 +327,15 @@
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
 		};
-		this.getPathErrors = function (path, includeSchemas) {
+		this.getPathErrors = function (path, includeSchemaErrors) {
 			path = path || "";
 			var result = errors.filter(function (error) {
 				return error.path == path
 					|| (error.path.substring(0, path.length) == path
 						&& error.path.charAt(path.length) == '/');
 			});
-			if (includeSchemas) {
+			if (includeSchemaErrors) {
+				var missing = {}; // cache missing status, to avoid lookup logic when repeated
 				for (var dataPath in schemaMap) {
 					if (dataPath == path
 						|| (dataPath.substring(0, path.length) == path
@@ -344,11 +346,22 @@
 							schemaBases[baseUrl] = true;
 						});
 						for (var schemaUrl in schemaBases) {
+							console.log(schemaUrl, generator.missing(schemaUrl), schemaStore.missing(schemaUrl));
 							if (requestErrors[schemaUrl]) {
 								result.push({
-									code: schema2js.ErrorCodes.SCHEMA_FETCH_ERROR,
+									code: ErrorCodes.SCHEMA_FETCH_ERROR,
 									path: dataPath,
-									params: {url: schemaUrl, error: requestErrors[schemaUrl].message}
+									params: {error: requestErrors[schemaUrl].message},
+									schema: schemaUrl
+								});
+							} else if (missing[schemaUrl] || generator.missing(schemaUrl) || schemaStore.missing(schemaUrl)) {
+								console.log("missing:", schemaUrl);
+								missing[schemaUrl] = true;
+								result.push({
+									code: ErrorCodes.SCHEMA_MISSING,
+									path: dataPath,
+									params: {},
+									schema: schemaUrl
 								});
 							}
 						}
@@ -482,9 +495,9 @@
 			}
 			return this.schemas(pathSpec).indexOf(url) !== -1;
 		},
-		errors: function (pathSpec, includeSchemaFetchErrors) {
+		errors: function (pathSpec, includeSchemaErrors) {
 			if (pathSpec === true || pathSpec === false) {
-				includeSchemaFetchErrors = pathSpec;
+				includeSchemaErrors = pathSpec;
 				pathSpec = "";
 			} else if (pathSpec == null) {
 				pathSpec = "";
@@ -493,7 +506,7 @@
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			return this._root.getPathErrors(this._path + pathSpec, includeSchemaFetchErrors);
+			return this._root.getPathErrors(this._path + pathSpec, includeSchemaErrors);
 		},
 		jsonType: function (pathSpec) {
 			var value = this.get(pathSpec);

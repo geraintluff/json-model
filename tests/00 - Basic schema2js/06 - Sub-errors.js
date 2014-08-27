@@ -46,7 +46,6 @@ describe('Sub-errors', function () {
 		var Demo = classes.Demo;
 		
 		var result = Demo.validate({});
-		console.log(JSON.stringify(result, null, 4));
 		assert.isFalse(result.valid, 'fails');
 		assert.equal(result.errors.length, 1);
 		var error = result.errors[0];
