@@ -228,9 +228,10 @@
 		KEYWORD_CUSTOM: 501,
 		// Schema structure
 		CIRCULAR_REFERENCE: 600, // $ref loop
-		// Schema availability
+		// Schema/document availability
 		SCHEMA_MISSING: 700,
 		SCHEMA_FETCH_ERROR: 701,
+		DOCUMENT_FETCH_ERROR: 702,
 		// Non-standard validation options
 		UNKNOWN_PROPERTY: 1000
 	};

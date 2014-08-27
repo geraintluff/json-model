@@ -336,6 +336,9 @@
 						return false;
 					}
 				}
+				if (bindConditions.filter) {
+					if (!bindConditions.filter(model, tag, attrs)) return false;
+				}
 				return true;
 			};
 			this.priority = bindObj.priority || 0;
@@ -599,7 +602,7 @@
 			return this;
 		},
 		html: function (tag, attrs, bindings, callback) {
-			if (typeof tag !== 'string') {
+			if (typeof tag !== 'string' && tag !== null) {
 				callback = bindings;
 				bindings = attrs;
 				attrs = tag;
@@ -615,13 +618,10 @@
 				bindings = null;
 			}
 			bindings = bindings || api.bindings;
-			var htmlPrefix = '', htmlSuffix = '';
-			if (tag || attrs) {
-				htmlPrefix = openTag(tag || 'span', attrs || {});
-				htmlSuffix = closeTag(tag);
-			}
-			tag = tag || 'div';
+			
+			tag = tag || 'span';
 			attrs = attrs || {};
+			var htmlPrefix = openTag(tag || 'span', attrs || {}), htmlSuffix = closeTag(tag);
 			
 			var binding = bindings.select(this, tag, attrs);
 			if (callback) {

@@ -90,7 +90,7 @@
 	};
 	api.EventEmitter = EventEmitter;
 	
-	var errorRequestFunction = function (params) {throw new Error('Requests not enabled - try JsonModel.setRequestFunction(func):\n' + JSON.stringify(params));};
+	var errorRequestFunction = function (params) {throw new Error('Requests not enabled - try JsonModel.setRequestFunctionfunc):\n' + JSON.stringify(params));};
 	var suppliedRequestFunction = errorRequestFunction;
 	function requestFunction(params, callback) {
 		return suppliedRequestFunction(params, callback);
@@ -362,7 +362,7 @@
 								result.push({
 									code: ErrorCodes.SCHEMA_FETCH_ERROR,
 									path: dataPath,
-									params: {error: requestErrors[baseUrl].message},
+									params: {message: requestErrors[baseUrl].message, status: (requestErrors[baseUrl].httpStatus || -1)},
 									schema: schemaUrl
 								});
 							} else {
@@ -592,9 +592,15 @@
 			hintSchemas = null;
 		}
 		params.method = params.method || 'GET';
+		var fragment = params.url.replace(/^[^#]*#?/, '');
+		params.url = params.url.replace(/#.*/, '');
+		
+		if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
+		
 		requestFunction(params, function (error, data, headers) {
 			if (error) return callback(error);
-			return api.create(data, params.url, hintSchemas, callback);
+			var schemas = hintSchemas;
+			api.create(data, params.url, schemas, callback);
 		});
 	};
 	api.create = function (initialValue, url, schemas, callback) {
@@ -634,6 +640,46 @@
 	api.is = function (potentialModel) {
 		return potentialModel instanceof Model;
 	};
+	
+	// Default request function in browser
+	if (typeof XMLHttpRequest === 'function') {
+		api.setRequestFunction(function (params, callback) {
+			if (params.method !== 'GET') throw new Error('Only GET supported for now');
+			
+			var request = new XMLHttpRequest();
+			request.open(params.method, params.url, true, params.user, params.password);
+			request.responseType = 'text';
+			request.onreadystatechange = function () {
+				if (request.readyState !== 4) return;
+				var error = null;
+				if (request.status < 200 || request.status > 299) {
+					error = new Error(request.status + ' ' + request.statusText);
+				}
+				var headers = {};
+				request.getAllResponseHeaders().split(/\r?\n/g).forEach(function (line) {
+					if (!line) return;
+					var match = /^([^\:\s]+)\s*\:\s*(.*)$/.exec(line);
+					if (!match) throw new Error('Failed header parse:', JSON.stringify(line));
+					var key = match[1].toLowerCase();
+					var value = match[2];
+					//value.match(/(^|,)(([^,\\"]|"([^"\\]|\\.)*")*)/g);
+					headers[key] = (value.length > 1) ? value : value[0];
+				});
+				
+				var data = request.responseText;
+				try {
+					data = JSON.parse(data);
+				} catch (e) {
+					error = error || e;
+				}
+				callback(e, data, headers);
+			};
+			for (var key in params.headers) {
+				request.setRequestHeader(key, params.headers[key]);
+			}
+			request.send();
+		});
+	}
 	
 	return api;
 });
