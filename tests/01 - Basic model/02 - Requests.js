@@ -12,7 +12,7 @@ describe('Requests', function () {
 			assert.deepEqual(params.method, 'GET');
 			
 			setTimeout(function () {
-				callback(null, '{"foo":"bar"}', 200, {'X-Foo': 'Bar'});
+				callback(null, '{"foo":"bar"}', 200, {'X-Foo': 'Bar, Baz'});
 			}, 10);
 		});
 		
@@ -21,9 +21,23 @@ describe('Requests', function () {
 			assert.isTrue(api.is(model));
 
 			assert.deepEqual(model.httpStatus(), 200);
-			assert.deepEqual(model.httpHeaders(), {'x-foo': 'Bar'});
+			assert.deepEqual(model.httpHeaders(), {'x-foo': 'Bar, Baz'});
+			assert.deepEqual(model.httpHeaders(true), {'x-foo': ['Bar', 'Baz']});
 			assert.deepEqual(model.httpHeader('not-present'), null);
-			assert.deepEqual(model.httpHeader('X-fOo'), 'Bar');
+			assert.deepEqual(model.httpHeader('X-fOo'), 'Bar, Baz');
+			assert.deepEqual(model.httpHeader('X-fOo', true), ['Bar', 'Baz']);
+			
+			var iterated1 = {};
+			model.httpHeaders(function (key, value) {
+				iterated1[key] = value;
+			});
+			assert.deepEqual(iterated1, model.httpHeaders());
+			var iterated2 = {};
+			model.httpHeaders(function (key, value) {
+				iterated2[key] = value;
+			}, true);
+			assert.deepEqual(iterated2, model.httpHeaders(true));
+			
 			done();
 		});
 	});

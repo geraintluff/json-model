@@ -20,6 +20,11 @@
 	function pointerUnescape(key) {
 		return key.replace(/~1/g, "/").replace(/~0/g, "~");
 	}
+	function splitHeader(value) {
+		return value.match(/(^|,)(([^,\\"]|"([^"\\]|\\.)*"?)*)/g).map(function (value) {
+			return value.replace(/^,?\s*/, '');
+		});
+	}
 
 	// Quick+dirty EventEmitter class
 	function EventEmitter() {
@@ -402,11 +407,27 @@
 		httpStatus: function (status) {
 			return this._root.http.status;
 		},
-		httpHeaders: function () {
-			return this._root.http.headers;
+		httpHeaders: function (callback, split) {
+			if (typeof callback === 'boolean') {
+				split = callback;
+				callback = null;
+			}
+			var headers = this._root.http.headers;
+			var result = {};
+			for (var key in headers) {
+				result[key] = split ? splitHeader(headers[key]) : headers[key];
+				if (callback) {
+					callback(key, result[key]);
+				}
+			}
+			return result;
 		},
-		httpHeader: function (key) {
-			return this._root.http.headers[key.toLowerCase()] || null;
+		httpHeader: function (key, split) {
+			var result = this._root.http.headers[key.toLowerCase()] || null;
+			if (split) {
+				return (result !== null) ? splitHeader(result) : [];
+			}
+			return result;
 		},
 		get: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
@@ -582,12 +603,13 @@
 			
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
-			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
+			requestFunction({method: 'GET', url: missingUrl}, function (error, data, status) {
 				delete pendingRequests[missingUrl];
 				if (error) {
 					if (typeof console !== 'undefined' && console.error) {
 						console.error('Error fetching ' + missingUrl + ':', error);
 					}
+					error.httpStatus = error.httpStatus || status;
 					requestErrors[missingUrl] = error;
 					generator.addSchema(missingUrl, null);
 				} else {
@@ -616,15 +638,16 @@
 		if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
 		
 		requestFunction(params, function (error, data, status, headers) {
-			if (error) return callback(error);
-			var schemas = hintSchemas;
-			// TODO: parse headers for schema
-			var result = api.create(data, params.url, schemas, callback);
-			var rootModel = result._root;
+			var schemas = [];
 			var newHeaders = {};
 			for (var key in headers || {}) {
 				newHeaders[key.toLowerCase()] = headers[key];
 			}
+			
+			var result = api.create(data || null, params.url, schemas, function (err, model) {
+				callback(err || error, model);
+			});
+			var rootModel = result._root;
 			rootModel.http = {status: status || null, headers: newHeaders};
 		});
 	};
@@ -687,7 +710,6 @@
 					if (!match) throw new Error('Failed header parse:', JSON.stringify(line));
 					var key = match[1].toLowerCase();
 					var value = match[2];
-					//value.match(/(^|,)(([^,\\"]|"([^"\\]|\\.)*")*)/g);
 					headers[key] = (value.length > 1) ? value : value[0];
 				});
 				
