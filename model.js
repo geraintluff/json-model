@@ -21,10 +21,36 @@
 		return key.replace(/~1/g, "/").replace(/~0/g, "~");
 	}
 	function splitHeader(value) {
+		if (value == null) return [];
 		return value.match(/(^|,)(([^,\\"]|"([^"\\]|\\.)*"?)*)/g).map(function (value) {
 			return value.replace(/^,?\s*/, '');
 		});
 	}
+	function parseLink(linkFormat) {
+		var href = linkFormat.match(/^\s*<([^>]*)>/) || null;
+		var result = {href: href[1] || null};
+		var remainder = linkFormat.replace(/^[^>]+>\s*;?/, '');
+		remainder.match(/(^|;)(([^;\\"]|"([^"\\]|\\.)*"?)*)/g).map(function (part) {
+			part = part.replace(/^\s*(;\s*)?/, '');
+			var key = part.replace(/\=.*/, '');
+			var remainder = part.substring(key.length).replace(/(^\s*=\s*|\s+$)/g, '');
+			if (remainder.charAt(0) === '"') {
+				try {
+					remainder = JSON.parse(remainder);
+				} catch (e) {
+					// do nothing
+				}
+			}
+			result[key] = result[key] || remainder;
+		});
+		return result;
+	}
+	api.util = {
+		pointerEscape: pointerEscape,
+		pointerUnescape: pointerUnescape,
+		splitHeader: splitHeader,
+		parseLink: parseLink
+	};
 
 	// Quick+dirty EventEmitter class
 	function EventEmitter() {
@@ -424,10 +450,7 @@
 		},
 		httpHeader: function (key, split) {
 			var result = this._root.http.headers[key.toLowerCase()] || null;
-			if (split) {
-				return (result !== null) ? splitHeader(result) : [];
-			}
-			return result;
+			return split ? splitHeader(result) : result;
 		},
 		get: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
@@ -641,7 +664,16 @@
 			var schemas = [];
 			var newHeaders = {};
 			for (var key in headers || {}) {
-				newHeaders[key.toLowerCase()] = headers[key];
+				newHeaders[key.toLowerCase()] = headers[key] + "";
+			}
+			splitHeader(newHeaders.link).forEach(function (link) {
+				var link = parseLink(link);
+				if (link.rel.toLowerCase() === 'describedby') {
+					schemas.push(link.href);
+				}
+			});
+			if (!schemas.length && !error) {
+				schemas = hintSchemas;
 			}
 			
 			var result = api.create(data || null, params.url, schemas, function (err, model) {
