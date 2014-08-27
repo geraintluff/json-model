@@ -208,12 +208,18 @@
 		return {target: valueTarget, key: finalKey};
 	}
 
-	function RootModel(initialValue, validatorFunctions) {
+	function RootModel(initialValue, url, validatorFunctions) {
 		var value;
 		var schemaMap = {};
 		var missingSchemas = {};
 		var errors = [];
 		var pendingSchemaFetch = false;
+		
+		this.url = url || ('tmp://' + Math.random().toString().substring(2));
+		this.http = {
+			status: null,
+			headers: {}
+		};
 		
 		var models = {c: {}};
 		this.modelForPath = function (path) {
@@ -362,7 +368,7 @@
 								result.push({
 									code: ErrorCodes.SCHEMA_FETCH_ERROR,
 									path: dataPath,
-									params: {message: requestErrors[baseUrl].message, status: (requestErrors[baseUrl].httpStatus || -1)},
+									params: {message: requestErrors[baseUrl].message, status: (requestErrors[baseUrl].httpStatus || null)},
 									schema: schemaUrl
 								});
 							} else {
@@ -390,6 +396,18 @@
 		this._path = path;
 	}
 	Model.prototype = {
+		url: function () {
+			return this._root.url + '#' + encodeURI(this._path);
+		},
+		httpStatus: function (status) {
+			return this._root.http.status;
+		},
+		httpHeaders: function () {
+			return this._root.http.headers;
+		},
+		httpHeader: function (key) {
+			return this._root.http.headers[key.toLowerCase()] || null;
+		},
 		get: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
 			pathSpec = pathSpec + "";
@@ -597,10 +615,17 @@
 		
 		if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
 		
-		requestFunction(params, function (error, data, headers) {
+		requestFunction(params, function (error, data, status, headers) {
 			if (error) return callback(error);
 			var schemas = hintSchemas;
-			api.create(data, params.url, schemas, callback);
+			// TODO: parse headers for schema
+			var result = api.create(data, params.url, schemas, callback);
+			var rootModel = result._root;
+			var newHeaders = {};
+			for (var key in headers || {}) {
+				newHeaders[key.toLowerCase()] = headers[key];
+			}
+			rootModel.http = {status: status || null, headers: newHeaders};
 		});
 	};
 	api.create = function (initialValue, url, schemas, callback) {
@@ -623,7 +648,7 @@
 			return api.validationErrors(schema);
 		});
 
-		var rootModel = new RootModel(initialValue, validatorFunctions);
+		var rootModel = new RootModel(initialValue, url, validatorFunctions);
 		var result = rootModel.modelForPath('');
 		if (callback) {
 			whenSchemasFetched(function () {
@@ -672,7 +697,7 @@
 				} catch (e) {
 					error = error || e;
 				}
-				callback(e, data, headers);
+				callback(error, data, request.status, headers);
 			};
 			for (var key in params.headers) {
 				request.setRequestHeader(key, params.headers[key]);

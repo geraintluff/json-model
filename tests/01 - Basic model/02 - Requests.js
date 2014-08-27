@@ -12,7 +12,7 @@ describe('Requests', function () {
 			assert.deepEqual(params.method, 'GET');
 			
 			setTimeout(function () {
-				callback(null, '{"foo":"bar"}');
+				callback(null, '{"foo":"bar"}', 200, {'X-Foo': 'Bar'});
 			}, 10);
 		});
 		
@@ -20,6 +20,8 @@ describe('Requests', function () {
 			assert.isNull(error);
 			assert.isTrue(api.is(model));
 
+			assert.deepEqual(model.httpStatus(), 200);
+			assert.deepEqual(model.httpHeaders(), {'x-foo': 'Bar'});
 			done();
 		});
 	});
