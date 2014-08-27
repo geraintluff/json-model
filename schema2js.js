@@ -180,7 +180,7 @@
 				var parts = pointerPath.split("/").slice(1);
 				for (var i = 0; i < parts.length; i++) {
 					var component = parts[i].replace(/~1/g, "/").replace(/~0/g, "~");
-					if (schema[component] === undefined) {
+					if (!schema || schema[component] === undefined) {
 						return undefined;
 					}
 					schema = schema[component];
@@ -603,7 +603,7 @@
 			return schema.required.indexOf(property) !== -1;
 		},
 		getFullSchema: function (schema, haltUrls) {
-			if (!schema || typeof schema['$ref'] !== 'string') return schema || {};
+			if (!schema || typeof schema['$ref'] !== 'string') return schema;
 			haltUrls = haltUrls || {};
 			var refUrl = schema['$ref'];
 			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
@@ -632,7 +632,7 @@
 			} else if (typeof schema.$ref === 'string') {
 				this.aliases[url] = schema.$ref;
 				requireUrl(schema.$ref);
-				return;
+				return '// skipping ' + url + ' - will add as reference later\n';
 			} else {
 				this.previouslyHandled[url] = true;
 				delete this.missingMap[url];

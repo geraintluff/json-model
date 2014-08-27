@@ -101,7 +101,14 @@
 	
 	var schemaStore, generator, generatedClasses;
 	var generatorConfig = {classes: false, assignment: true, trackMissing: true, schemaStore: schemaStore};
-	var clean = api.clean = function setupClean() {
+	var clean = api.clean = function setupClean(callback) {
+		if (callback) {
+			// If possible, delay cleaning until schemas fetched
+			return whenSchemasFetched(function () {
+				clean();
+				callback();
+			});
+		}
 		requestErrors = {};
 		pendingRequests = {};
 		var config = Object.create(generatorConfig);
@@ -337,24 +344,25 @@
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
 		};
-		this.getPathErrors = function (path, includeSchemaErrors) {
+		this.getPathErrors = function (path, includeSchemaErrors, immediateOnly) {
 			path = path || "";
 			var result = errors.filter(function (error) {
 				return error.path == path
-					|| (error.path.substring(0, path.length) == path
+					|| (!immediateOnly && error.path.substring(0, path.length) == path
 						&& error.path.charAt(path.length) == '/');
 			});
 			if (includeSchemaErrors) {
 				for (var dataPath in missingSchemas) {
 					if (dataPath == path
-						|| (dataPath.substring(0, path.length) == path
+						|| (!immediateOnly && dataPath.substring(0, path.length) == path
 							&& dataPath.charAt(path.length) == '/')) {
 						missingSchemas[dataPath].forEach(function (schemaUrl) {
-							if (requestErrors[schemaUrl]) {
+							var baseUrl = schemaUrl.replace(/#.*/, '');
+							if (requestErrors[baseUrl]) {
 								result.push({
 									code: ErrorCodes.SCHEMA_FETCH_ERROR,
 									path: dataPath,
-									params: {error: requestErrors[schemaUrl].message},
+									params: {error: requestErrors[baseUrl].message},
 									schema: schemaUrl
 								});
 							} else {
@@ -496,8 +504,9 @@
 			}
 			return this.schemas(pathSpec).indexOf(url) !== -1;
 		},
-		errors: function (pathSpec, includeSchemaErrors) {
+		errors: function (pathSpec, includeSchemaErrors, exactOnly) {
 			if (pathSpec === true || pathSpec === false) {
+				exactOnly = includeSchemaErrors;
 				includeSchemaErrors = pathSpec;
 				pathSpec = "";
 			} else if (pathSpec == null) {
@@ -507,7 +516,7 @@
 			if (pathSpec && pathSpec.charAt(0) !== "/") {
 				pathSpec = "/" + pointerEscape(pathSpec);
 			}
-			return this._root.getPathErrors(this._path + pathSpec, includeSchemaErrors);
+			return this._root.getPathErrors(this._path + pathSpec, includeSchemaErrors, exactOnly);
 		},
 		jsonType: function (pathSpec) {
 			var value = this.get(pathSpec);
