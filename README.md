@@ -47,13 +47,13 @@ The arguments to the callback are `error`, `jsonData` (the fetched data, JSON-de
 
 ### Creating/opening data
 
-You can create a JsonModel wrapper directly - everything except the initial value (`jsonData`) is optional:
+You can create a JsonModel wrapper directly:
 
 ```javascript
 var model = JsonModel.create(jsonData, url, schemas, callback);
 ```
 
-If `callback` is provided, it will be called (with two arguments `error` and `model`) after all relevant schemas have loaded.  The `model` argument will be the same as the return value of `create()`.
+Everything except the initial value (`jsonData`) is optional, but if you supply `schemas` you must supply `url` as well (although it may be `null`).  If `callback` is provided, it will be called (with two arguments `error` and `model`) after all relevant schemas have loaded.  The `model` argument will be the same as the return value of `create()`.
 
 You can also open remote data: (`hintSchemas` is an optional set of schemas to use if the remote resource doesn't supply its own)
 
@@ -63,7 +63,7 @@ JsonModel.open('http://example.com/json', hintSchemas, function (error, model) {
 
 In both cases, the callback is only called when all the schemas have been loaded.
 
-The `schemas`/`hintSchemas` arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.  However, bear in mind that if `schemas` is supplied as a string in `create()`, then `url` must be supplied (or `null`) otherwise it will interpret the schema URL as the data URL.
+The `schemas`/`hintSchemas` arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.
 
 ### UI bindings
 

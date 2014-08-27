@@ -100,9 +100,13 @@
 	};
 	
 	var schemaStore, generator, generatedClasses;
+	var generatorConfig = {classes: false, assignment: true, trackMissing: true, schemaStore: schemaStore};
 	var clean = api.clean = function setupClean() {
-		schemaStore = api.schemaStore = new schema2js.SchemaStore();
-		generator = new schema2js.Generator({classes: false, assignment: true, trackMissing: true, schemaStore: schemaStore});
+		requestErrors = {};
+		pendingRequests = {};
+		var config = Object.create(generatorConfig);
+		config.schemaStore = schemaStore = api.schemaStore = new schema2js.SchemaStore();
+		generator = new schema2js.Generator(config);
 		generatedClasses = generator.classes(null, requestFunction);
 		api.setRequestFunction(null);
 	};
@@ -130,13 +134,17 @@
 				generator.addSchema(schema);
 			}
 			var name = generator.classNameForUrl(schema);
-			var validator = function (data, dataPath, schemaMap) {
+			var validator = function (data, dataPath, schemaMap, missingMap) {
 				if (generatedClasses[name]) {
-					return generatedClasses[name].validationErrors(data, dataPath, schemaMap);
+					return generatedClasses[name].validationErrors(data, dataPath, schemaMap, missingMap);
 				} else {
 					if (schemaMap) {
 						schemaMap[''] = schemaMap[''] || [];
 						schemaMap[''].push(schema);
+					}
+					if (missingMap) {
+						missingMap[''] = missingMap[''] || [];
+						missingMap[''].push(schema);
 					}
 					return [];
 				}
@@ -146,7 +154,7 @@
 			});
 			return validator;
 		} else {
-			var anonymousGen = new schema2js.Generator({classes: false, assignment: true});
+			var anonymousGen = new schema2js.Generator(generatorConfig);
 			var className = 'AnonymousSchema';
 			anonymousGen.addSchema(schema, className);
 			var classes = anonymousGen.classes();
@@ -232,9 +240,10 @@
 			// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
 			var oldSchemaMap = schemaMap;
 			schemaMap = {};
+			missingSchemas = {};
 			errors = [];
 			for (var i = 0; i < validatorFunctions.length; i++) {
-				errors = errors.concat(validatorFunctions[i](value, "", schemaMap));
+				errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
 			}
 			
 			// Trigger events
@@ -304,9 +313,10 @@
 					// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
 					var oldSchemaMap = schemaMap;
 					schemaMap = {};
+					missingSchemas = {};
 					errors = [];
 					for (var i = 0; i < validatorFunctions.length; i++) {
-						errors = errors.concat(validatorFunctions[i](value, "", schemaMap));
+						errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
 					}
 					checkSchemaChanges('', models, null, oldSchemaMap);
 				});
@@ -335,18 +345,11 @@
 						&& error.path.charAt(path.length) == '/');
 			});
 			if (includeSchemaErrors) {
-				var missing = {}; // cache missing status, to avoid lookup logic when repeated
-				for (var dataPath in schemaMap) {
+				for (var dataPath in missingSchemas) {
 					if (dataPath == path
 						|| (dataPath.substring(0, path.length) == path
 							&& dataPath.charAt(path.length) == '/')) {
-						var schemaBases = {};
-						schemaMap[dataPath].forEach(function (schemaUrl) {
-							var baseUrl = schemaUrl.replace(/#.*/, '');
-							schemaBases[baseUrl] = true;
-						});
-						for (var schemaUrl in schemaBases) {
-							console.log(schemaUrl, generator.missing(schemaUrl), schemaStore.missing(schemaUrl));
+						missingSchemas[dataPath].forEach(function (schemaUrl) {
 							if (requestErrors[schemaUrl]) {
 								result.push({
 									code: ErrorCodes.SCHEMA_FETCH_ERROR,
@@ -354,9 +357,7 @@
 									params: {error: requestErrors[schemaUrl].message},
 									schema: schemaUrl
 								});
-							} else if (missing[schemaUrl] || generator.missing(schemaUrl) || schemaStore.missing(schemaUrl)) {
-								console.log("missing:", schemaUrl);
-								missing[schemaUrl] = true;
+							} else {
 								result.push({
 									code: ErrorCodes.SCHEMA_MISSING,
 									path: dataPath,
@@ -364,7 +365,7 @@
 									schema: schemaUrl
 								});
 							}
-						}
+						});
 					}
 				}
 			}
@@ -555,14 +556,16 @@
 			if (pendingRequests[missingUrl]) return;
 			pendingRequests[missingUrl] = true;
 			requestFunction({method: 'GET', url: missingUrl}, function (error, data) {
+				delete pendingRequests[missingUrl];
 				if (error) {
 					if (typeof console !== 'undefined' && console.error) {
 						console.error('Error fetching ' + missingUrl + ':', error);
 					}
 					requestErrors[missingUrl] = error;
+					generator.addSchema(missingUrl, null);
+				} else {
+					generator.addSchema(missingUrl, data || null);
 				}
-				delete pendingRequests[missingUrl];
-				generator.addSchema(missingUrl, data || {});
 				checkSchemasFetched();
 			});
 		});

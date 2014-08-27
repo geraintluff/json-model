@@ -108,7 +108,7 @@
 			if (url === baseUrl + '#') {
 				url = baseUrl;
 			}
-			schema.id = schema.id || url;
+			if (schema) schema.id = schema.id || url;
 			delete this.missingUrls[baseUrl];
 			this.schemas[url] = schema;
 			this._searchSchema(schema, url);
@@ -151,7 +151,7 @@
 			}
 		},
 		resolveRefs: function (schema, urlHistory) {
-			if (schema['$ref'] !== undefined) {
+			if (schema && schema['$ref'] !== undefined) {
 				urlHistory = urlHistory || {};
 				if (urlHistory[schema['$ref']]) {
 					return this.createError(ErrorCodes.CIRCULAR_REFERENCE, {urls: Object.keys(urlHistory).join(', ')}, '', '');
@@ -450,7 +450,7 @@
 				throw new Error('Forcing a re-compute of ' + url);
 				delete this.previouslyHandled[url];
 			}
-			if (schema && typeof schema === 'object') {
+			if (typeof schema === 'object') {
 				this.schemaStore.add(url, schema);
 			} else {
 				name = name || schema;
@@ -472,7 +472,7 @@
 				return result;
 			} else {
 				var baseUrl = url.replace(/#.*/, '');
-				return !this.previouslyHandled[normUrl(url)] && !this.previouslyHandled[baseUrl];
+				return this.missingMap[url] || (!this.previouslyHandled[normUrl(url)] && !this.previouslyHandled[baseUrl]);
 			}
 		},
 		code: function () {
@@ -535,11 +535,13 @@
 					code += propertyExpression('classes', urlName) + ' = function () {\n';
 					code += indent('return ' + propertyExpression('classes', aliasName) + '.apply(this, arguments);\n');
 					code += '};\n';
+					code += propertyExpression('classes', urlName) + '.prototype = Object.create(' + propertyExpression('classes', aliasName) + '.prototype);\n';
 				}
 				if (this.config.validation) {
 					code += propertyExpression('classes', urlName) + '.validate = function (data) {\n';
 					code += indent('return ' + propertyExpression('classes', aliasName) + '.validate(data);\n');
 					code += '};\n';
+					code += '/*' + JSON.stringify(this.config) + '*/\n';
 					if (this.config.assignment) {
 						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
 						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ');\n');
@@ -601,7 +603,7 @@
 			return schema.required.indexOf(property) !== -1;
 		},
 		getFullSchema: function (schema, haltUrls) {
-			if (!schema || typeof schema['$ref'] !== 'string') return schema;
+			if (!schema || typeof schema['$ref'] !== 'string') return schema || {};
 			haltUrls = haltUrls || {};
 			var refUrl = schema['$ref'];
 			if (haltUrls[refUrl]) return {"description": "ERROR! Recursion"};
@@ -688,7 +690,7 @@
 						body += indent(propertyExpression('this', key) + ' = ' + JSON.stringify(subSchema['default']) + ';\n');
 					}
 					body += '}\n';
-					var subUrl = subSchema.id || this.extendUrl(url, ['properties', key]);
+					var subUrl = (subSchema && subSchema.id) || this.extendUrl(url, ['properties', key]);
 					castProperty(subSchema, subUrl, propertyExpression('this', key));
 				}
 				if (schema.additionalProperties) {
@@ -699,7 +701,7 @@
 					body += indent(indent('this[key] = value[key];\n'));
 					if (typeof schema.additionalProperties === 'object') {
 						var subSchema = this.getFullSchema(schema.additionalProperties);
-						var subUrl = subSchema.id || this.extendUrl(url, ['additionalProperties']);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(url, ['additionalProperties']);
 						castProperty(subSchema, subUrl, propertyExpression('this[key]'));
 					}
 					body += indent('}\n');
@@ -824,7 +826,7 @@
 			
 			var schemaUrlExpr = JSON.stringify(schemaUrl);
 
-			if (this.config.trackMissing && this.missing(schemaUrl)) {
+			if (this.config.trackMissing && !this.schemaStore.get(schemaUrl)) {
 				validation += 'if (missing) {\n';
 				validation += indent('(missing[' + dataPathExpr + '] = missing[' + dataPathExpr + '] || []).push(' + schemaUrlExpr + ');\n');
 				validation += '}\n';
@@ -840,7 +842,7 @@
 			if (schema.allOf) {
 				schema.allOf.forEach(function (subSchema, index) {
 					var subSchema = this.getFullSchema(subSchema);
-					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['allOf', index]);
+					var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['allOf', index]);
 					var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
 					validation += checkCode;
 				}.bind(this));
@@ -863,7 +865,7 @@
 							validation += 'schemaMap = {};\n';
 						}
 						var subSchema = this.getFullSchema(subSchema);
-						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['anyOf', index]);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['anyOf', index]);
 						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc, true);
 						validation += checkCode;
 						validation += 'if (!errors.length) {\n';
@@ -890,7 +892,7 @@
 							validation += 'schemaMap = {};\n';
 						}
 						var subSchema = this.getFullSchema(subSchema);
-						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['oneOf', index]);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['oneOf', index]);
 						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc, true);
 						validation += checkCode;
 						validation += 'if (!errors.length) {\n';
@@ -955,7 +957,7 @@
 				if (Array.isArray(schema.items)) {
 					schema.items.forEach(function (subSchema, index) {
 						var subSchema = this.getFullSchema(subSchema);
-						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items', index]);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['items', index]);
 						var checkCode = this.validationCode(valueExpr + '[' + index + ']', dataPathExprs.concat(['"/0"']), subUrl, subSchema, requireUrl, errorFunc);
 						arrayCode += 'if (' + valueExpr + '.length >= ' + JSON.stringify(index) + ') {\n';
 						arrayCode += indent(checkCode);
@@ -968,7 +970,7 @@
 							arrayCode += '}\n';
 						} else {
 							var subSchema = this.getFullSchema(schema.additionalItems);
-							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalItems']);
+							var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['additionalItems']);
 							var checkCode = this.validationCode(valueExpr + '[i]', dataPathExprs.concat(['"/"', 'i']), subUrl, subSchema, requireUrl, errorFunc);
 							arrayCode += 'for (var i = ' + JSON.stringify(schema.items.length) + '; i < ' + valueExpr + '.length; i++) {\n';
 							arrayCode += indent(checkCode);
@@ -977,7 +979,7 @@
 					}
 				} else if (typeof schema.items === 'object') {
 					var subSchema = this.getFullSchema(schema.items);
-					var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['items']);
+					var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['items']);
 					arrayCode += 'for (var i = 0; i < ' + valueExpr + '.length; i++) {\n';
 					arrayCode += indent(this.validationCode(valueExpr + '[i]', dataPathExprs.concat(['"/"', 'i']), subUrl, subSchema, requireUrl, errorFunc));
 					arrayCode += '}\n';
@@ -998,7 +1000,7 @@
 					var checkCode = '';
 					if (schema.properties && schema.properties[key]) {
 						var subSchema = this.getFullSchema(schema.properties[key]);
-						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['properties', key]);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['properties', key]);
 						checkCode += this.validationCode(propertyExpr, dataPathExprs.concat([JSON.stringify('/' + key.replace(/~/g, '~0').replace(/\//g, '~1'))]), subUrl, subSchema, requireUrl, errorFunc);
 					}
 					if (schema.dependencies && key in schema.dependencies) {
@@ -1011,7 +1013,7 @@
 							});
 						} else {
 							var subSchema = this.getFullSchema(schema.dependencies[key]);
-							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['dependencies', key]);
+							var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['dependencies', key]);
 							checkCode += this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc);
 						}
 					}
@@ -1049,7 +1051,7 @@
 					for (var key in schema.patternProperties) {
 						var regExpCode = (new RegExp(key)).toString();
 						var subSchema = this.getFullSchema(schema.patternProperties[key]);
-						var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['patternProperties', key]);
+						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['patternProperties', key]);
 						objectCode += indent('if (' + regExpCode + '.test(key)) {\n');
 						objectCode += indent(indent(this.validationCode(propertyExpr, dataPathExprs.concat(['"/"', 'pointerEscape(key)']), subUrl, subSchema, requireUrl, errorFunc)));
 						if ('additionalProperties' in schema) {
@@ -1067,7 +1069,7 @@
 							objectCode += indent(indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.OBJECT_ADDITIONAL_PROPERTIES) + ', params: {key: key}, path:' + dataPathExpr + ', schema: ' + schemaUrlExpr + '}', true)));
 						} else if (typeof schema.additionalProperties === 'object') {
 							var subSchema = this.getFullSchema(schema.additionalProperties);
-							var subUrl = subSchema.id || this.extendUrl(schemaUrl, ['additionalProperties']);
+							var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['additionalProperties']);
 							objectCode += indent(indent(this.validationCode(propertyExpr, dataPathExprs.concat(['"/"', 'pointerEscape(key)']), subUrl, subSchema, requireUrl, errorFunc)));
 						}
 						objectCode += indent('}\n');
