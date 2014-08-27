@@ -506,7 +506,7 @@
 			code += '}\n';
 			if (this.config.unicodeLength) {
 				code += 'function unicodeLength(string) {\n';
-				code += indent('return string.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "_").length;\n');
+				code += indent('return string.replace(/[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]/g, "_").length;\n');
 				code += '}\n';
 			}
 			code += 'if (superclass && typeof superclass === "object") {\n';
@@ -869,11 +869,7 @@
 						validation += 'var anyOfSubErrors = [];\n';
 					}
 					schema.anyOf.forEach(function (subSchema, index) {
-						if (this.config.subErrors) {
-							validation += 'anyOfSubErrors[' + index + '] = errors = [];\n'
-						} else {
-							validation += 'errors = [];\n'
-						}
+						validation += 'errors = [];\n'
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
@@ -889,6 +885,9 @@
 						}
 						validation += indent('anyOfPassCount++;\n');
 						validation += '}\n';
+						if (this.config.subErrors) {
+							validation += 'anyOfSubErrors[' + index + '] = errors;\n'
+						}
 					}.bind(this));
 				}
 				if (schema.oneOf) {
@@ -897,11 +896,7 @@
 						validation += 'var oneOfSubErrors = [];\n';
 					}
 					schema.oneOf.forEach(function (subSchema, index) {
-						if (this.config.subErrors) {
-							validation += 'oneOfSubErrors[' + index + '] = errors = [];\n'
-						} else {
-							validation += 'errors = [];\n'
-						}
+						validation += 'errors = [];\n'
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
@@ -919,6 +914,9 @@
 						}
 						validation += indent('oneOfPassCount++;\n');
 						validation += '}\n';
+						if (this.config.subErrors) {
+							validation += 'oneOfSubErrors[' + index + '] = errors;\n'
+						}
 					}.bind(this));
 				}
 				if (this.config.assignment) {
@@ -928,15 +926,15 @@
 				if (schema.anyOf) {
 					var paramsExpr = this.config.subErrors ? '{errors: anyOfSubErrors}' : '{}';
 					validation += 'if (!anyOfPassCount) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
+					validation += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ANY_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true));
 					validation += '}\n';
 				}
 				if (schema.oneOf) {
 					var paramsExpr = this.config.subErrors ? '{errors: oneOfSubErrors}' : '{}';
 					validation += 'if (!oneOfPassCount) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
+					validation += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MISSING) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true));
 					validation += '} else if (oneOfPassCount > 1) {\n';
-					validation += errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MULTIPLE) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true);
+					validation += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.ONE_OF_MULTIPLE) + ', params: ' + paramsExpr + ', path: ' + dataPathExpr + '}', true));
 					validation += '}\n';
 				}
 			}
