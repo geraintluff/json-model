@@ -416,47 +416,88 @@
 		}
 	};
 	if (typeof require === 'function' && typeof module !== 'undefined') {
-		Bindings.prototype.include = function (filename) {
+		Bindings.prototype.includeDir = function (dirname) {
+			thisBindings = this;
+			try {
+				var items = require('fs').readdirSync(dirname);
+			} catch (e) {
+				dirname = require.resolve(dirname);
+				console.log(dirname);
+				var items = require('fs').readdirSync(dirname);
+			}
+			items.forEach(function (filename) {
+				if (/\.js$/i.test(filename)) {
+					thisBindings.includeJs(dirname + '/' + filename);
+				} else if (/\.css$/i.test(filename)) {
+					thisBindings.includeCss(dirname + '/' + filename);
+				}
+			});
+		};
+		Bindings.prototype.includeCss = function (filename) {
+			var code = require('fs').readFileSync(filename, {encoding: 'utf-8'});
+			code = '/*** ' + require('path').basename(filename) + ' ***/\n\n' + code;
+			this._includeCss = ((this._includeCss || '') + '\n\n' + code).replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
+		};
+		Bindings.prototype.includeJs = function (filename) {
 			if (filename.charAt(0) === '.') {
 				filename = require('path').join(process.cwd(), filename);
 			}
-			var after = function () {
-				delete global.bindings;
-			};
-			if ('bindings' in global) {
-				var oldValue = global.bindings;
-				after = function () {
-					global.bindings = oldValue;
-				};
-			}
+			var after = [];
+			['bindings', 'JsonModel'].forEach(function (key) {
+				if (key in global) {
+					var oldValue = global[key];
+					after.push(function () {global[key] = oldValue;});
+				} else {
+					after.push(function () {delete global[key];});
+				}
+			});
 			global.bindings = this;
+			global.JsonModel = api;
 			
 			require(filename);
 			var code = require('fs').readFileSync(filename, {encoding: 'utf-8'});
 			code = '/*** ' + require('path').basename(filename) + ' ***/\n\n' + code;
-			this._includeCode = this._includeCode || [];
-			this._includeCode.push(code);
+			this._includeJs = ((this._includeJs || '') + '\n\n' + code).replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
 			
-			after();
+			while (after.length) after.pop()();
 		};
-		Bindings.prototype.bundle = function (skip) {
-			var header = skip ? '' : '(function (bindings) {\n\n';
-			var footer = skip ? '' : '\n\n})(JsonModel.bindings);';
-			var includeCode = this._includeCode.join('\n\n').replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
-			if (typeof this.parent.bundle === 'function') {
-				includeCode += (includeCode ? '\n\n' : '') + this.parent.bundle;
+		Bindings.prototype.bundleJs = function (skip) {
+			var header = skip ? '' : '(function (JsonModel, bindings) {\n\n';
+			var footer = skip ? '' : '\n\n})(JsonModel, JsonModel.bindings);';
+			var includeCode = this._includeJs || '';
+			if (typeof this.parent.bundleJs === 'function') {
+				includeCode = this.parent.bundleJs(true) + (includeCode ? '\n\n' : '') + includeCode;
 			}
 			return header + includeCode + footer;
 		};
-		api.bundle = function (bindings) {
+		api.bundleJs = function (bindings, includeCss) {
+			if (typeof bindings === 'boolean') {
+				includeCss = bindings;
+				bindings = null;
+			}
 			bindings = bindings || api.bindings;
 			var code = ['/schema2js.js', '/model.js', '/model-bind.js'].map(function (filename) {
 				var result = '/*** ' + filename + ' ***/\n\n';
 				result += require('fs').readFileSync(__dirname + filename, {encoding: 'utf-8'});
 				return result;
 			});
-			code.push(bindings.bundle());
+			code.push(bindings.bundleJs());
+			if (includeCss) {
+				var cssFunc = '/*** CSS ***/\n\n(function (css) {\n\tvar style = document.createElement("style");\n\tstyle.appendChild(document.createTextNode(css));\n\tdocument.head.appendChild(style);\n})';
+				code.push(cssFunc + '(' + JSON.stringify(this.bundleCss()) + ')');
+			}
 			return code.join('\n\n');
+		};
+		Bindings.prototype.bundleCss = function (skip) {
+			var includeCode = this._includeCss || '';
+			if (typeof this.parent.bundleCss === 'function') {
+				includeCode = this.parent.bundleCss(true) + (includeCode ? '\n\n' : '') + includeCode;
+			}
+			return includeCode;
+		};
+		api.bundleCss = function (bindings) {
+			bindings = bindings || api.bindings;
+			return bindings.bundleCss();
 		};
 	}
 	api.bindings = new Bindings();
