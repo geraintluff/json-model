@@ -374,6 +374,33 @@
 		}
 	};
 	
+	var placeholderStart = Math.random().toString().substring(2);
+	var placeholderEnd = Math.random().toString().substring(2);
+	var placeholderRegExp = new RegExp(placeholderStart + '(.+?)' + placeholderEnd);
+	
+	function BindingContext(bindings) {
+		this.bindings = bindings || api.bindings;
+	}
+	BindingContext.prototype = {
+		expandHtml: function (html, callback) {
+			html = html.replace(placeholderRegExp, function (match, data) {
+				var stored = JSON.parse(data);
+				return JSON.stringify(stored);
+			});
+		
+			setTimeout(function () {
+				callback(null, 'context.expand(' + html + ')');
+			}, 10);
+		}
+	}
+	BindingContext.placeholder = function (model, tag, attrs) {
+		return placeholderStart + JSON.stringify({
+			url: model.url(),
+			tag: tag,
+			attrs: attrs
+		}) + placeholderEnd;
+	};
+	
 	function Bindings(parent) {
 		this._state = 0; // Increment every time something happens, so children know to re-concatenate
 		this._immediateOptions = [];
@@ -400,6 +427,15 @@
 				});
 			}
 			return this._concatOptions;
+		},
+		context: function () {
+			return new BindingContext(this);
+		},
+		addHtml: function (canBind, htmlFunc) {
+			return this.canBind({
+				canBind: canBind,
+				html: htmlFunc
+			});
 		},
 		add: function (bindObj) {
 			this._state++;
@@ -601,7 +637,9 @@
 			element.boundDataModel = null;
 			return this;
 		},
-		html: function (tag, attrs, bindings, callback) {
+		html: function (tag, attrs) {
+			return BindingContext.placeholder(this, tag || 'span', attrs || {});
+		/*
 			if (typeof tag !== 'string' && tag !== null) {
 				callback = bindings;
 				bindings = attrs;
@@ -626,7 +664,7 @@
 			var binding = bindings.select(this, tag, attrs);
 			if (callback) {
 				setTimeout(function () {
-					var html = binding.html(this, tag, attrs);
+					var immediateHtml = binding.html(this, tag, attrs);
 					html = htmlPrefix + html + htmlSuffix;
 					callback(null, html);
 				}.bind(this), 10);
@@ -635,6 +673,7 @@
 				html = htmlPrefix + html + htmlSuffix;
 				return html;
 			}
+		*/
 		}
 	});
 	
