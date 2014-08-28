@@ -19,44 +19,8 @@
 			return container;
 		}
 	};
-	
-	var asyncReplace = api.util.asyncReplace = function (str, subStr, replacer, callback) {
-		var replacements = {};
-		var pending = 0;
-		var checkDone = function () {
-			if (!--pending) {
-				var result = str.replace(subStr, function (match) {
-					var args = Array.prototype.slice.call(arguments, 0);
-					var pos = args[args.length - 2];
-					var key = pos + '-' + match.length;
-					return replacements[key];
-				});
-				callback(null, result);
-			}
-		};
-		str.replace(subStr, function (match) {
-			pending++;
-			var args = Array.prototype.slice.call(arguments, 0);
-			var pos = args[args.length - 2];
-			var key = pos + '-' + match.length;
-			args.push(function (error, result) {
-				if (error) {
-					pending = Infinity;
-					replacer = function () {};
-					return callback(error);
-				}
-				replacements[key] = result;
-				checkDone();
-			});
-			replacer.apply(null, args);
-		});
-		if (!pending) {
-			setTimeout(function () {
-				callback(null, str);
-			}, 10);
-		}
-		return this;
-	};
+
+	var asap = api.util.timer.asap;
 	
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
@@ -464,8 +428,8 @@
 			}
 			return this._concatOptions;
 		},
-		context: function () {
-			return new BindingContext(this);
+		context: function (dataStore) {
+			return new BindingContext(this, dataStore || api.dataStore);
 		},
 		addHtml: function (canBind, htmlFunc) {
 			return this.canBind({
@@ -577,8 +541,102 @@
 	}
 	api.bindings = new Bindings();
 	
+	// Something nobody would actually output, and would be HTML-escaped if it were in content anyway
+	//    TODO: XSS?  E.g. code not removed by HTML sanitiser, causes rendering of external resource when only safe local content expected, renderer dumps raw HTML to page
+	//    Could introduce secret/random component to fight this
+	var magicPlaceholders = ['<JM--', '-->']; 
+	var magicRegex = /<JM--(.*?)-->/g;
+	function BindingContext(bindings, dataStore) {
+		this._bindings = bindings;
+		this._dataStore = dataStore;
+	}
+	BindingContext.prototype = {
+		errorHtml: function (error, tag, attrs) {
+			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
+		},
+		renderHtml: function (model, tag, attrs, callback) {
+			var thisContext = this;
+			tag = tag || 'span';
+			attrs = attrs || {};
+
+			model.whenReady(function () {
+				var binding = thisContext._bindings.select(model, tag, attrs);
+				
+				var html = openTag(tag, attrs) + binding.html(model, tag, attrs) + closeTag(tag);
+				thisContext.expandHtml(html, callback);
+			});
+		},
+		expandHtml: function (html, callback) {
+			var thisContext = this;
+			html.asyncReplace(magicRegex, function (match, data, callback) {
+				try {
+					data = JSON.parse(data);
+				} catch (e) {
+					return callback(e);
+				}
+				var rootModel = thisContext._dataStore._getRootModel(data.key);
+				console.log('rootModel', rootModel);
+				if (!rootModel) {
+					var error = new Error('Missing from data store: ' + data.key);
+					var errorHtml = thisContext.errorHtml(error, data.tag, data.attrs)
+					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
+				}
+				var model = rootModel.modelForPath(data.path);
+				// DEBUG - delay
+				setTimeout(function () {
+					thisContext.renderHtml(model, data.tag, data.attrs, callback);
+				}, Math.random()*200);
+			}, callback);
+		}
+	};
+	BindingContext.placeholder = function (model, tag, attrs) {
+		return magicPlaceholders.join(JSON.stringify({
+			key: model._root.storeKey,
+			path: model._path,
+			tag: tag,
+			attrs: attrs
+		}));
+	};
+	
 	String.prototype.escapeHtml = function () {
 		return this.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+	};
+	String.prototype.asyncReplace = function (subStr, replacer, callback) {
+		var str = this;
+		var error = null;
+		var replacements = {};
+		var pending = 1;
+		var checkDone = function () {
+			if (!--pending) {
+				var result = str.replace(subStr, function (match) {
+					var pos = arguments[arguments.length - 2];
+					var key = pos + '-' + match.length;
+					return replacements[key];
+				});
+				callback(error, result);
+			}
+		};
+		str.replace(subStr, function (match) {
+			pending++;
+			var pos = arguments[arguments.length - 2];
+			var key = pos + '-' + match.length;
+			var args = Array.prototype.slice.call(arguments, 0, replacer.length - 1);
+			args.push(function (err, result) {
+				if (err) {
+					error = error || err;
+					replacements[key] = result || '';
+					replacer = function (callback) {
+						callback(null, '');
+					};
+					return checkDone();
+				}
+				replacements[key] = result;
+				checkDone();
+			});
+			replacer.apply(null, args);
+		});
+		asap(checkDone);
+		return this;
 	};
 
 	api.extend({
@@ -674,72 +732,10 @@
 			return this;
 		},
 		html: function (tag, attrs) {
-			return BindingContext.placeholder(this, tag || 'span', attrs || {});
-		/*
-			if (typeof tag !== 'string' && tag !== null) {
-				callback = bindings;
-				bindings = attrs;
-				attrs = tag;
-				tag = null;
-			}
-			if (typeof attrs !== 'object' || attrs instanceof Bindings) {
-				callback = bindings;
-				bindings = attrs;
-				attrs = null;
-			}
-			if (typeof bindings === 'function') {
-				callback = bindings;
-				bindings = null;
-			}
-			bindings = bindings || api.bindings;
-			
-			tag = tag || 'span';
-			attrs = attrs || {};
-			var htmlPrefix = openTag(tag || 'span', attrs || {}), htmlSuffix = closeTag(tag);
-			
-			var binding = bindings.select(this, tag, attrs);
-			if (callback) {
-				setTimeout(function () {
-					var immediateHtml = binding.html(this, tag, attrs);
-					html = htmlPrefix + html + htmlSuffix;
-					callback(null, html);
-				}.bind(this), 10);
-			} else {
-				var html = binding.html(this, tag, attrs);
-				html = htmlPrefix + html + htmlSuffix;
-				return html;
-			}
-		*/
+			return BindingContext.placeholder(this, tag, attrs);
 		}
 	});
 	
-	api.timer = {
-		wait: function (ms, listener) {
-			var timer = null;	
-			return function () {
-				if (timer) clearTimeout(timer);
-				var thiz = this;
-				var args = arguments;
-				timer = setTimeout(function () {
-					timer = null;
-					listener.apply(thiz, args);
-				}, ms);
-			};
-		},
-		limit: function (ms, listener) {
-			var timer = null;	
-			return function () {
-				if (timer) return;
-				var thiz = this;
-				var args = arguments;
-				timer = setTimeout(function () {
-					timer = null;
-					listener.apply(thiz, args);
-				}, ms);
-			};
-		}
-	};
-
 	// Default bindings
 	api.bindings.add({
 		priority: -Infinity,

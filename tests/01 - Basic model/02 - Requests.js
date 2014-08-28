@@ -16,9 +16,10 @@ describe('Requests', function () {
 			}, 10);
 		});
 		
-		api.open('http://example.com/test', function (error, model) {
+		var openResult = api.open('http://example.com/test', function (error, model) {
 			assert.isNull(error);
 			assert.isTrue(api.is(model));
+			assert.equal(model, openResult, 'immediate result is same model');
 
 			assert.deepEqual(model.httpStatus(), 200);
 			assert.deepEqual(model.httpHeaders(), {'x-foo': 'Bar, Baz'});
