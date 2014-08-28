@@ -403,8 +403,8 @@
 			}
 			return this._concatOptions;
 		},
-		context: function () {
-			return new BindingContext(this);
+		context: function (dataStore) {
+			return new BindingContext(this, dataStore || api.dataStore);
 		},
 		add: function (bindObj) {
 			this._state++;
@@ -510,26 +510,49 @@
 	}
 	api.bindings = new Bindings();
 	
-	var magicPlaceholders = ['<JM--', '-->'];
+	// Something nobody would actually output, and would be HTML-escaped if it were in content anyway
+	//    TODO: XSS?  E.g. code not removed by HTML sanitiser, causes rendering of external resource when only safe local content expected, renderer dumps raw HTML to page
+	//    Could introduce secret/random component to fight this
+	var magicPlaceholders = ['<JM--', '-->']; 
 	var magicRegex = /<JM--(.*?)-->/g;
-	function BindingContext(bindings) {
+	function BindingContext(bindings, dataStore) {
 		this.bindings = bindings;
+		this.dataStore = dataStore;
 	}
 	BindingContext.prototype = {
+		renderHtml: function (model, tag, attrs, callback) {
+			var thisContext = this;
+			tag = tag || 'span';
+			attrs = attrs || {};
+
+			model.whenReady(function () {
+				var binding = thisContext.bindings.select(model, tag, attrs);
+				
+				var html = openTag(tag, attrs) + binding.html(model, tag, attrs) + closeTag(tag);
+				thisContext.expandHtml(html, callback);
+			});
+		},
 		expandHtml: function (html, callback) {
+			var thisContext = this;
 			html.asyncReplace(magicRegex, function (match, data, callback) {
 				try {
 					data = JSON.parse(data);
 				} catch (e) {
 					return callback(e);
 				}
-				callback(null, JSON.stringify(data, null, 4).escapeHtml());
+				var rootModel = thisContext.dataStore._getRootModel(data.key);
+				if (!rootModel) {
+					return callback(new Error('Not found in data store: ' + data.key));
+				}
+				var model = rootModel.modelForPath(data.path);
+				thisContext.renderHtml(model, data.tag, data.attrs, callback)
 			}, callback);
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {
 		return magicPlaceholders.join(JSON.stringify({
-			url: model.url(),
+			key: model._root.storeKey,
+			path: model._path,
 			tag: tag,
 			attrs: attrs
 		}));
@@ -666,41 +689,6 @@
 		},
 		html: function (tag, attrs) {
 			return BindingContext.placeholder(this, tag, attrs);
-			/*
-			if (typeof tag !== 'string' && tag !== null) {
-				callback = bindings;
-				bindings = attrs;
-				attrs = tag;
-				tag = null;
-			}
-			if (typeof attrs !== 'object' || attrs instanceof Bindings) {
-				callback = bindings;
-				bindings = attrs;
-				attrs = null;
-			}
-			if (typeof bindings === 'function') {
-				callback = bindings;
-				bindings = null;
-			}
-			bindings = bindings || api.bindings;
-			
-			tag = tag || 'span';
-			attrs = attrs || {};
-			var htmlPrefix = openTag(tag || 'span', attrs || {}), htmlSuffix = closeTag(tag);
-			
-			var binding = bindings.select(this, tag, attrs);
-			if (callback) {
-				asap(function () {
-					var html = binding.html(this, tag, attrs);
-					html = htmlPrefix + html + htmlSuffix;
-					callback(null, html);
-				});
-			} else {
-				var html = binding.html(this, tag, attrs);
-				html = htmlPrefix + html + htmlSuffix;
-				return html;
-			}
-			*/
 		}
 	});
 	

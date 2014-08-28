@@ -46,7 +46,7 @@
 		return result;
 	}
 	var asap = (typeof process === 'object' && typeof process.nextTick === 'function') ? process.nextTick.bind(process) : function (func) {
-		setTimeout(func, 10);
+		setTimeout(func, 0);
 	};
 	
 	api.util = {
@@ -128,7 +128,7 @@
 	};
 	api.EventEmitter = EventEmitter;
 	
-	var errorRequestFunction = function (params) {throw new Error('Requests not enabled - try JsonModel.setRequestFunctionfunc):\n' + JSON.stringify(params));};
+	var errorRequestFunction = function (params) {throw new Error('Requests not enabled - try JsonModel.setRequestFunction(func):\n' + JSON.stringify(params));};
 	var suppliedRequestFunction = errorRequestFunction;
 	function requestFunction(params, callback) {
 		return suppliedRequestFunction(params, callback);
@@ -246,17 +246,99 @@
 		return {target: valueTarget, key: finalKey};
 	}
 
-	function RootModel(initialValue, url, validatorFunctions) {
-		var value;
-		var schemaMap = {};
-		var missingSchemas = {};
-		var errors = [];
-		var pendingSchemaFetch = false;
+	function RootModel(dataStore, storeKey) {
+		var thisRootModel = this;
+		this.dataStore = dataStore;
+		this.storeKey = storeKey;
 		
-		this.url = url || ('tmp://' + Math.random().toString().substring(2));
+		// Hypertext metadata
+		this.url = null;
 		this.http = {
 			status: null,
 			headers: {}
+		};
+
+		// ready state
+		this.ready = true;
+		var whenReadyCallbacks = [];
+		this.whenReady = function (callback) {
+			if (this.ready) return asap(callback);
+			whenReadyCallbacks.push(callback);
+		};
+		var pendingValidators = 0;
+		function decrementPendingValidators() {
+			if (!--pendingValidators) {
+				thisRootModel.ready = true;
+				while (whenReadyCallbacks.length) {
+					whenReadyCallbacks.shift()();
+				}
+			}
+		}
+		
+		var value = null;
+		var validatorFunctions = [];
+		var schemaMap = {};
+		var missingSchemas = {};
+		var errors = [];
+		var pendingSchemaRecalculate = false;
+
+		function recalculateSchemas() {
+			schemaMap = {};
+			missingSchemas = {};
+			errors = [];
+			// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
+			for (var i = 0; i < validatorFunctions.length; i++) {
+				errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
+			}
+		}
+		// Trigger schema-change events for a tree (with optional ignored child)
+		function checkSchemaChanges(path, modelSet, ignoreKey, oldSchemaMap) {
+			var oldSchemas = oldSchemaMap[path] || [];
+			var newSchemas = schemaMap[path] || [];
+			var added = [], removed = [];
+			for (var i = 0; i < oldSchemas.length; i++) {
+				if (newSchemas.indexOf(oldSchemas[i]) === -1) {
+					removed.push(oldSchemas[i]);
+				}
+			}
+			for (var i = 0; i < newSchemas.length; i++) {
+				var schemaUrl = newSchemas[i];
+				if (oldSchemas.indexOf(schemaUrl) === -1) {
+					added.push(schemaUrl);
+				}
+			}
+			if (added.length || removed.length) {
+				if (modelSet.m) {
+					modelSet.m.emit('schemachange', added, removed);
+				}
+				for (var key in modelSet.c) {
+					if (ignoreKey === null || key !== ignoreKey) {
+						checkSchemaChanges(path + "/" + pointerEscape(key), modelSet.c[key], null, oldSchemaMap);
+					}
+				}
+			}
+		}
+		
+		// TODO: emit relative JSON Pointer for parent changes?
+		function childValueChanges(modelSet) {
+			for (var key in modelSet.c) {
+				var childModelSet = modelSet.c[key];
+				if (childModelSet.m) {
+					childModelSet.m.emit('change', '');
+				}
+				childValueChanges(childModelSet)
+			}
+		}
+		
+		this.reset = function (value, schemas) {
+			pendingValidators++;
+			validatorFunctions = (schemas || []).map(function (schema) {
+				pendingValidators++;
+				return api.validationErrors(schema, decrementPendingValidators);
+			});
+			this.ready = !validatorFunctions.length || api.schemasFetched();
+			this.setPathValue('', value);
+			asap(decrementPendingValidators);
 		};
 		
 		var models = {c: {}};
@@ -288,54 +370,9 @@
 				}
 			}
 			
-			// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
+			// Parent+child value+schema changes
 			var oldSchemaMap = schemaMap;
-			schemaMap = {};
-			missingSchemas = {};
-			errors = [];
-			for (var i = 0; i < validatorFunctions.length; i++) {
-				errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
-			}
-			
-			// Trigger events
-			function checkSchemaChanges(path, modelSet, ignoreKey, oldSchemaMap) {
-				var oldSchemas = oldSchemaMap[path] || [];
-				var newSchemas = schemaMap[path] || [];
-				var added = [], removed = [];
-				for (var i = 0; i < oldSchemas.length; i++) {
-					if (newSchemas.indexOf(oldSchemas[i]) === -1) {
-						removed.push(oldSchemas[i]);
-					}
-				}
-				for (var i = 0; i < newSchemas.length; i++) {
-					var schemaUrl = newSchemas[i];
-					if (oldSchemas.indexOf(schemaUrl) === -1) {
-						added.push(schemaUrl);
-					}
-				}
-				if (added.length || removed.length) {
-					if (modelSet.m) {
-						modelSet.m.emit('schemachange', added, removed);
-					}
-					for (var key in modelSet.c) {
-						if (ignoreKey === null || key !== ignoreKey) {
-							checkSchemaChanges(path + "/" + pointerEscape(key), modelSet.c[key], null, oldSchemaMap);
-						}
-					}
-				}
-			}
-			
-			// TODO: emit relative JSON Pointer for parent changes?
-			function childValueChanges(modelSet) {
-				for (var key in modelSet.c) {
-					var childModelSet = modelSet.c[key];
-					if (childModelSet.m) {
-						childModelSet.m.emit('change', '');
-					}
-					childValueChanges(childModelSet)
-				}
-			}
-			
+			recalculateSchemas();
 			var pathParts = path.split('/');
 			var modelSet = models;
 			for (var i = 1; i <= pathParts.length; i++) {
@@ -357,18 +394,14 @@
 				}
 			}
 			
-			if (!pendingSchemaFetch && !api.schemasFetched()) {
-				pendingSchemaFetch = true;
-				api.whenSchemasFetched(function () {
-					pendingSchemaFetch = false;
-					// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
+			// If things are still being fetched, 
+			if (!this.ready && !pendingSchemaRecalculate) {
+				pendingSchemaRecalculate = true;
+				// We un-shift (instead of using whenReady) to make sure it executes first, before any other callbacks
+				whenReadyCallbacks.unshift(function () {
+					pendingSchemaRecalculate = false;
 					var oldSchemaMap = schemaMap;
-					schemaMap = {};
-					missingSchemas = {};
-					errors = [];
-					for (var i = 0; i < validatorFunctions.length; i++) {
-						errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
-					}
+					recalculateSchemas();
 					checkSchemaChanges('', models, null, oldSchemaMap);
 				});
 			}
@@ -423,8 +456,6 @@
 			}
 			return result;
 		};
-
-		this.setPathValue("", initialValue);
 	}
 	RootModel.prototype = {
 	};
@@ -458,6 +489,9 @@
 		httpHeader: function (key, split) {
 			var result = this._root.http.headers[key.toLowerCase()] || null;
 			return split ? splitHeader(result) : result;
+		},
+		whenReady: function (callback) {
+			this._root.whenReady(callback.bind(null, null, this));
 		},
 		get: function (pathSpec) {
 			if (pathSpec == null) pathSpec = "";
@@ -653,71 +687,117 @@
 		asap(checkSchemasFetched);
 	}
 	
-	api.open = function (params, hintSchemas, callback) {
-		if (typeof params === 'string') {
-			params = {url: params};
-		}
-		if (typeof hintSchemas === 'function') {
-			callback = hintSchemas;
-			hintSchemas = null;
-		}
-		params.method = params.method || 'GET';
-		var fragment = params.url.replace(/^[^#]*#?/, '');
-		params.url = params.url.replace(/#.*/, '');
-		
-		if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
-		
-		requestFunction(params, function (error, data, status, headers) {
-			var schemas = [];
-			var newHeaders = {};
-			for (var key in headers || {}) {
-				newHeaders[key.toLowerCase()] = headers[key] + "";
+	function DataStore(parent) {
+		this.parent = parent;
+		this._store = parent ? Object.create(parent._store) : {};
+	}
+	DataStore.prototype = {
+		normParams: function (params) {
+			if (typeof params === 'string') return this.normParams({url: params});
+			return {
+				url: params.url.replace(/#.*/, ''),
+				fragment: params.url.replace(/[^#]*#?/, ''),
+				method: (params.method || 'GET').toUpperCase(),
+				headers: params.headers || {}
+			};
+		},
+		_getRootModel: function (storeKey, create) {
+			if (this._store[storeKey]) return this._store[storeKey];
+			return create ? (this._store[storeKey] = new RootModel(this, storeKey)) : null;
+		},
+		_keyForParams: function (params) {
+			return params.method + ' ' + params.url;
+		},
+		open: function (params, hintSchemas, callback) {
+			var thisStore = this;
+			
+			if (typeof hintSchemas === 'function') {
+				callback = hintSchemas;
+				hintSchemas = null;
 			}
-			splitHeader(newHeaders.link).forEach(function (link) {
-				var link = parseLink(link);
-				if (link.rel.toLowerCase() === 'describedby') {
-					schemas.push(link.href);
+			params = this.normParams(params);
+			var fragment = params.url.replace(/^[^#]*#?/, '');
+			params.url = params.url.replace(/#.*/, '');
+		
+			if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
+			
+			var storeKey = this._keyForParams(params);
+			var rootModel = this._getRootModel(storeKey, true);
+			rootModel.url = params.url;
+			var model = rootModel.modelForPath('');
+		
+			requestFunction(params, function (error, data, status, headers) {
+				var schemas = [];
+				var newHeaders = {};
+				for (var key in headers || {}) {
+					newHeaders[key.toLowerCase()] = headers[key] + "";
+				}
+				splitHeader(newHeaders.link).forEach(function (link) {
+					var link = parseLink(link);
+					if (link.rel.toLowerCase() === 'describedby') {
+						schemas.push(link.href);
+					}
+				});
+				if (!schemas.length && !error) {
+					schemas = hintSchemas || [];
+				}
+			
+				rootModel.reset((typeof data !== 'undefined') ? data : null, schemas);
+				rootModel.http = {status: status || null, headers: newHeaders};
+
+				if (callback) {
+					model.whenReady(callback);
 				}
 			});
-			if (!schemas.length && !error) {
-				schemas = hintSchemas;
-			}
 			
-			var result = api.create(data || null, params.url, schemas, function (err, model) {
-				callback(err || error, model);
-			});
-			var rootModel = result._root;
-			rootModel.http = {status: status || null, headers: newHeaders};
-		});
+			return model;
+		},
+		create: function (initialValue, url, schemas, callback) {
+			// Argument juggling
+			if (Array.isArray(url)) {
+				callback = schemas;
+				schemas = url;
+				url = null;
+			}
+			if (typeof url === 'function') {
+				callback = url;
+				url = schemas = null;
+			} else if (typeof schemas === 'function') {
+				callback = schemas;
+				schemas = null;
+			}
+			if (typeof url !== 'string') {
+				url = 'tmp://' + Math.random().toString().substring(2);
+			}
+			if (typeof schemas === 'string' || (schemas && typeof schemas === 'object' && !Array.isArray(schemas))) schemas = [schemas];
+			schemas = schemas || [];
+
+			// Actual logic
+			var params = this.normParams(url);
+			if (params.fragment) throw new Error('URL fragments not allowed in create()');
+
+			var key = this._keyForParams(params);
+			var rootModel = this._getRootModel(key, true);
+			var model = rootModel.modelForPath('');
+
+			rootModel.url = params.url;
+			rootModel.reset(initialValue, schemas);
+			rootModel.http = {status: null, headers: {}};
+			
+			if (callback) {
+				model.whenReady(callback);
+			}
+			return model;
+		}
+	};
+	
+	api.dataStore = new DataStore();
+	
+	api.open = function (params, hintSchemas, callback) {
+		return api.dataStore.open(params, hintSchemas, callback);
 	};
 	api.create = function (initialValue, url, schemas, callback) {
-		if (Array.isArray(url)) {
-			callback = schemas;
-			schemas = url;
-			url = null;
-		}
-		if (typeof url === 'function') {
-			callback = url;
-			url = schemas = null;
-		} else if (typeof schemas === 'function') {
-			callback = schemas;
-			schemas = null;
-		}
-		if (typeof schemas === 'string' || (schemas && typeof schemas === 'object' && !Array.isArray(schemas))) schemas = [schemas];
-		schemas = schemas || [];
-
-		var validatorFunctions = schemas.map(function (schema) {
-			return api.validationErrors(schema);
-		});
-
-		var rootModel = new RootModel(initialValue, url, validatorFunctions);
-		var result = rootModel.modelForPath('');
-		if (callback) {
-			whenSchemasFetched(function () {
-				callback(null, result);
-			});
-		}
-		return result;
+		return api.dataStore.create(initialValue, url, schemas, callback);
 	};
 	api.extend = function (obj) {
 		Object.keys(obj).forEach(function (key) {
