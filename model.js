@@ -45,11 +45,18 @@
 		});
 		return result;
 	}
+	var asap = (typeof process === 'object' && typeof process.nextTick === 'function') ? process.nextTick.bind(process) : function (func) {
+		setTimeout(func, 10);
+	};
+	
 	api.util = {
 		pointerEscape: pointerEscape,
 		pointerUnescape: pointerUnescape,
 		splitHeader: splitHeader,
-		parseLink: parseLink
+		parseLink: parseLink,
+		timer: {
+			asap: asap
+		}
 	};
 
 	// Quick+dirty EventEmitter class
@@ -643,7 +650,7 @@
 		});
 		// We might have all the schemas anyway, but need a refresh, so regenerate the schemas only
 		checkSchemasFetched(true);
-		setTimeout(checkSchemasFetched, 10);
+		asap(checkSchemasFetched);
 	}
 	
 	api.open = function (params, hintSchemas, callback) {
