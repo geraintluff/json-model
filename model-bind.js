@@ -380,27 +380,6 @@
 	var placeholderEnd = Math.random().toString().substring(2);
 	var placeholderRegExp = new RegExp(placeholderStart + '(.+?)' + placeholderEnd);
 	
-	function BindingContext(bindings) {
-		this.bindings = bindings || api.bindings;
-	}
-	BindingContext.prototype = {
-		expandHtml: function (html, callback) {
-			asyncReplace(html, placeholderRegExp, function (match, data, index, src, callback) {
-				var stored = JSON.parse(data);
-				setTimeout(function () {
-					callback(null, JSON.stringify(stored));
-				}, 10);
-			}, callback);
-		}
-	}
-	BindingContext.placeholder = function (model, tag, attrs) {
-		return placeholderStart + JSON.stringify({
-			url: model.url(),
-			tag: tag,
-			attrs: attrs
-		}) + placeholderEnd;
-	};
-	
 	function Bindings(parent) {
 		this._state = 0; // Increment every time something happens, so children know to re-concatenate
 		this._immediateOptions = [];
@@ -559,12 +538,17 @@
 			tag = tag || 'span';
 			attrs = attrs || {};
 
-			model.whenReady(function () {
+			var result = function () {
 				var binding = thisContext._bindings.select(model, tag, attrs);
 				
 				var html = openTag(tag, attrs) + binding.html(model, tag, attrs) + closeTag(tag);
 				thisContext.expandHtml(html, callback);
-			});
+			};
+			if (model.ready()) {
+				result();
+			} else {
+				model.whenReady(result);
+			}
 		},
 		expandHtml: function (html, callback) {
 			var thisContext = this;
@@ -575,21 +559,18 @@
 					return callback(e);
 				}
 				var rootModel = thisContext._dataStore._getRootModel(data.key);
-				console.log('rootModel', rootModel);
 				if (!rootModel) {
 					var error = new Error('Missing from data store: ' + data.key);
 					var errorHtml = thisContext.errorHtml(error, data.tag, data.attrs)
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				// DEBUG - delay
-				setTimeout(function () {
-					thisContext.renderHtml(model, data.tag, data.attrs, callback);
-				}, Math.random()*200);
+				thisContext.renderHtml(model, data.tag, data.attrs, callback);
 			}, callback);
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {
+		model._root.pokeStore();
 		return magicPlaceholders.join(JSON.stringify({
 			key: model._root.storeKey,
 			path: model._path,

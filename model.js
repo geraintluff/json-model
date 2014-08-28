@@ -273,9 +273,17 @@
 		var thisRootModel = this;
 		this.dataStore = dataStore;
 		this.storeKey = storeKey;
-		function pokeStore() {
+
+		var pendingPoke = null;
+		function pokeNow() {
 			dataStore._pokeRootModel(storeKey, thisRootModel);
 		}
+		function clearPoke() {
+			pendingPoke = null;
+		}
+		var pokeStore = this.pokeStore = function () {
+			pendingPoke = pendingPoke || pokeNow() || asap(clearPoke) || true;
+		};
 		
 		// Hypertext metadata
 		this.url = null;
@@ -379,6 +387,7 @@
 		}
 		
 		this.setPathValue = function (path, newValue) {
+			pokeStore();
 			if (!path) {
 				value = newValue;
 			} else {
@@ -434,8 +443,7 @@
 			return true;
 		};
 		this.getPathValue = function (path) {
-			// DEBUG
-			//pokeStore();
+			pokeStore();
 			if (!path) {
 				return value;
 			}
@@ -517,6 +525,9 @@
 		httpHeader: function (key, split) {
 			var result = this._root.http.headers[key.toLowerCase()] || null;
 			return split ? splitHeader(result) : result;
+		},
+		ready: function () {
+			return this._root.ready;
 		},
 		whenReady: function (callback) {
 			this._root.whenReady(callback.bind(null, null, this));
@@ -718,11 +729,10 @@
 	function DataStore(parent) {
 		this.parent = parent;
 		this.config = parent ? Object.create(parent.config) : {
-			keepMs: 100
+			keepMs: 1000
 		}
 		this._store = parent ? Object.create(parent._store) : {};
 		this._removeTimeouts = {};
-		this._removeMs = {};
 	}
 	DataStore.prototype = {
 		normParams: function (params) {
@@ -734,20 +744,22 @@
 				headers: params.headers || {}
 			};
 		},
-		_pokeRootModel: function (storeKey, model, keepMs) {
+		_pokeRootModel: function (storeKey, model) {
 			var thisStore = this;
 			this._store[storeKey] = this._store[storeKey] || model;
 			clearTimeout(this._removeTimeouts[storeKey]);
 			this._removeTimeouts[storeKey] = setTimeout(function () {
 				delete thisStore._store[storeKey];
 				delete thisStore._removeTimeouts[storeKey];
-				delete thisStore._removeMs[storeKey];
-			}, this._removeMs[storeKey] = keepMs || this._removeMs[storeKey] || this.config.keepMs);
+			}, this.config.keepMs);
 			return model;
 		},
 		_getRootModel: function (storeKey, create, keepMs) {
-			var model = this._store[storeKey] || (create ? new RootModel(this, storeKey) : null);
-			return this._pokeRootModel(storeKey, model, keepMs);
+			if (this._store[storeKey]) return this._store[storeKey];
+			if (create) {
+				return this._store[storeKey] = this._pokeRootModel(storeKey, new RootModel(this, storeKey));
+			}
+			return null;
 		},
 		_keyForParams: function (params) {
 			return params.method + ' ' + params.url;
