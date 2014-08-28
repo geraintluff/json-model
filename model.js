@@ -250,6 +250,9 @@
 		var thisRootModel = this;
 		this.dataStore = dataStore;
 		this.storeKey = storeKey;
+		function pokeStore() {
+			dataStore._pokeRootModel(storeKey, thisRootModel);
+		}
 		
 		// Hypertext metadata
 		this.url = null;
@@ -408,6 +411,8 @@
 			return true;
 		};
 		this.getPathValue = function (path) {
+			// DEBUG
+			//pokeStore();
 			if (!path) {
 				return value;
 			}
@@ -689,7 +694,12 @@
 	
 	function DataStore(parent) {
 		this.parent = parent;
+		this.config = parent ? Object.create(parent.config) : {
+			keepMs: 100
+		}
 		this._store = parent ? Object.create(parent._store) : {};
+		this._removeTimeouts = {};
+		this._removeMs = {};
 	}
 	DataStore.prototype = {
 		normParams: function (params) {
@@ -701,9 +711,20 @@
 				headers: params.headers || {}
 			};
 		},
-		_getRootModel: function (storeKey, create) {
-			if (this._store[storeKey]) return this._store[storeKey];
-			return create ? (this._store[storeKey] = new RootModel(this, storeKey)) : null;
+		_pokeRootModel: function (storeKey, model, keepMs) {
+			var thisStore = this;
+			this._store[storeKey] = this._store[storeKey] || model;
+			clearTimeout(this._removeTimeouts[storeKey]);
+			this._removeTimeouts[storeKey] = setTimeout(function () {
+				delete thisStore._store[storeKey];
+				delete thisStore._removeTimeouts[storeKey];
+				delete thisStore._removeMs[storeKey];
+			}, this._removeMs[storeKey] = keepMs || this._removeMs[storeKey] || this.config.keepMs);
+			return model;
+		},
+		_getRootModel: function (storeKey, create, keepMs) {
+			var model = this._store[storeKey] || (create ? new RootModel(this, storeKey) : null);
+			return this._pokeRootModel(storeKey, model, keepMs);
 		},
 		_keyForParams: function (params) {
 			return params.method + ' ' + params.url;

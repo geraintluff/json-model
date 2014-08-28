@@ -516,17 +516,20 @@
 	var magicPlaceholders = ['<JM--', '-->']; 
 	var magicRegex = /<JM--(.*?)-->/g;
 	function BindingContext(bindings, dataStore) {
-		this.bindings = bindings;
-		this.dataStore = dataStore;
+		this._bindings = bindings;
+		this._dataStore = dataStore;
 	}
 	BindingContext.prototype = {
+		errorHtml: function (error, tag, attrs) {
+			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
+		},
 		renderHtml: function (model, tag, attrs, callback) {
 			var thisContext = this;
 			tag = tag || 'span';
 			attrs = attrs || {};
 
 			model.whenReady(function () {
-				var binding = thisContext.bindings.select(model, tag, attrs);
+				var binding = thisContext._bindings.select(model, tag, attrs);
 				
 				var html = openTag(tag, attrs) + binding.html(model, tag, attrs) + closeTag(tag);
 				thisContext.expandHtml(html, callback);
@@ -540,12 +543,18 @@
 				} catch (e) {
 					return callback(e);
 				}
-				var rootModel = thisContext.dataStore._getRootModel(data.key);
+				var rootModel = thisContext._dataStore._getRootModel(data.key);
+				console.log('rootModel', rootModel);
 				if (!rootModel) {
-					return callback(new Error('Not found in data store: ' + data.key));
+					var error = new Error('Missing from data store: ' + data.key);
+					var errorHtml = thisContext.errorHtml(error, data.tag, data.attrs)
+					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				thisContext.renderHtml(model, data.tag, data.attrs, callback)
+				// DEBUG - delay
+				setTimeout(function () {
+					thisContext.renderHtml(model, data.tag, data.attrs, callback);
+				}, Math.random()*200);
 			}, callback);
 		}
 	};
@@ -563,6 +572,7 @@
 	};
 	String.prototype.asyncReplace = function (subStr, replacer, callback) {
 		var str = this;
+		var error = null;
 		var replacements = {};
 		var pending = 1;
 		var checkDone = function () {
@@ -572,7 +582,7 @@
 					var key = pos + '-' + match.length;
 					return replacements[key];
 				});
-				callback(null, result);
+				callback(error, result);
 			}
 		};
 		str.replace(subStr, function (match) {
@@ -580,11 +590,14 @@
 			var pos = arguments[arguments.length - 2];
 			var key = pos + '-' + match.length;
 			var args = Array.prototype.slice.call(arguments, 0, replacer.length - 1);
-			args.push(function (error, result) {
-				if (error) {
-					pending = Infinity;
-					replacer = function () {};
-					return callback(error);
+			args.push(function (err, result) {
+				if (err) {
+					error = error || err;
+					replacements[key] = result || '';
+					replacer = function (callback) {
+						callback(null, '');
+					};
+					return checkDone();
 				}
 				replacements[key] = result;
 				checkDone();
