@@ -20,6 +20,44 @@
 		}
 	};
 	
+	var asyncReplace = api.util.asyncReplace = function (str, subStr, replacer, callback) {
+		var replacements = {};
+		var pending = 0;
+		var checkDone = function () {
+			if (!--pending) {
+				var result = str.replace(subStr, function (match) {
+					var args = Array.prototype.slice.call(arguments, 0);
+					var pos = args[args.length - 2];
+					var key = pos + '-' + match.length;
+					return replacements[key];
+				});
+				callback(null, result);
+			}
+		};
+		str.replace(subStr, function (match) {
+			pending++;
+			var args = Array.prototype.slice.call(arguments, 0);
+			var pos = args[args.length - 2];
+			var key = pos + '-' + match.length;
+			args.push(function (error, result) {
+				if (error) {
+					pending = Infinity;
+					replacer = function () {};
+					return callback(error);
+				}
+				replacements[key] = result;
+				checkDone();
+			});
+			replacer.apply(null, args);
+		});
+		if (!pending) {
+			setTimeout(function () {
+				callback(null, str);
+			}, 10);
+		}
+		return this;
+	};
+	
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
 		for (var key in attrs) {
@@ -383,14 +421,12 @@
 	}
 	BindingContext.prototype = {
 		expandHtml: function (html, callback) {
-			html = html.replace(placeholderRegExp, function (match, data) {
+			asyncReplace(html, placeholderRegExp, function (match, data, index, src, callback) {
 				var stored = JSON.parse(data);
-				return JSON.stringify(stored);
-			});
-		
-			setTimeout(function () {
-				callback(null, 'context.expand(' + html + ')');
-			}, 10);
+				setTimeout(function () {
+					callback(null, JSON.stringify(stored));
+				}, 10);
+			}, callback);
 		}
 	}
 	BindingContext.placeholder = function (model, tag, attrs) {
