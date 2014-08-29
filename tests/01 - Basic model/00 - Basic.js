@@ -64,8 +64,8 @@ describe('Basic model', function () {
 		assert.isFalse(model.hasSchema(schemaUrl + '1234'));
 		assert.isTrue(model.hasSchema('/foo', schemaUrl + '#/properties/foo'));
 		
-		assert.deepEqual(model.prop('foo').links(), [{href: '/hello', rel: 'test'}]);
-		assert.deepEqual(model.prop('foo').links('test'), [{href: '/hello', rel: 'test'}]);
+		assert.deepEqual(model.prop('foo').links(), [{href: '/hello', rel: 'test', method: 'GET'}]);
+		assert.deepEqual(model.prop('foo').links('test'), [{href: '/hello', rel: 'test', method: 'GET'}]);
 		assert.deepEqual(model.prop('foo').links('other'), []);
 	});
 

@@ -65,6 +65,9 @@
 		}
 		return false;
 	}
+	api.util = {
+		resolveUrl: resolveUrl
+	};
 	
 	var SchemaStore = api.SchemaStore = function SchemaStore(parent) {
 		this.schemas = parent ? Object.create(parent.schemas) : {};
@@ -859,9 +862,16 @@
 						};
 					}, template));
 					lines.push('rel: ' + JSON.stringify(ldo.rel));
+					if (ldo.method) {
+						lines.push('method: ' + JSON.stringify(ldo.method));
+					}
 					if (ldo.schema) {
 						var subUrl = (ldo.schema.id) || this.extendUrl(schemaUrl, ['links', index, 'schema']);
 						lines.push('schema: ' + JSON.stringify(subUrl));
+					}
+					if (ldo.targetSchema) {
+						var subUrl = (ldo.schema.id) || this.extendUrl(schemaUrl, ['links', index, 'targetSchema']);
+						lines.push('targetSchema: ' + JSON.stringify(subUrl));
 					}
 					return indent('{\n' + lines.map(indent).join(',\n') + '\n}');
 				}.bind(this)).join(',\n');

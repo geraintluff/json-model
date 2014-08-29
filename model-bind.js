@@ -21,6 +21,7 @@
 	};
 
 	var asap = api.util.timer.asap;
+	var resolveUrl = api.util.resolveUrl;
 	
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
@@ -332,7 +333,9 @@
 				}
 				if (bindConditions.schema) {
 					var modelSchemas = model.schemas();
+					var baseUrl = model._root.dataStore.baseUrl;
 					if (!bindConditions.schema.some(function (schema) {
+						schema = resolveUrl(baseUrl, schema);
 						return modelSchemas.indexOf(schema) !== -1;
 					})) {
 						return false;
@@ -541,8 +544,18 @@
 			var result = function () {
 				var binding = thisContext._bindings.select(model, tag, attrs);
 				
-				var html = openTag(tag, attrs) + binding.html(model, tag, attrs) + closeTag(tag);
-				thisContext.expandHtml(html, callback);
+				var immediateHtml = binding.html(model, tag, attrs, function (error, html) {
+					if (error) return callback(error, html);
+					if (typeof immediateHtml === 'string') {
+						throw new Error('Renderer must either return HTML string or call the callback, but not both');
+					}
+					html = openTag(tag, attrs) + html + closeTag(tag);
+					thisContext.expandHtml(html, callback);
+				});
+				if (typeof immediateHtml === 'string') {
+					var html = openTag(tag, attrs) + immediateHtml + closeTag(tag);
+					thisContext.expandHtml(html, callback);
+				}
 			};
 			if (model.ready()) {
 				result();
