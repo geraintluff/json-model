@@ -21,8 +21,10 @@ var validator = JsonModel.validator(schema);
 
 var result = validator(data);
 console.log(result.valid);
-console.log(result.errors);
-console.log(result.schemas);
+console.log(result.errors); // List of errors
+console.log(result.schemas); // Map from JSON Pointer paths --> schema URLs
+console.log(result.links); // Map --> links
+console.log(result.missing); // Map --> missing schemas
 ```
 
 If some schemas need to be fetched, then the validator will not be completely functional at first.  You can supply a callback function to be notified when the validator is ready (which also supplies the same validator as a result):
@@ -137,7 +139,7 @@ Schemas are compiled into validators (generating custom JS code), which has an u
 Here's a table of measured times for various validation setups (using the [JSON Schema Test Suite](https://github.com/json-schema/JSON-Schema-Test-Suite)) on Node:
 
 <!--SPEEDSTART-->
-<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th><th style="background-color: #DDD;">Repeats</th></tr><tr><td>json-model@0.2.6 (precompiled)</td><td>2.3</td><td>1</td><td>100%</td><td>8534</td></tr><tr><td>json-model@0.2.6 (compile and validate)</td><td>301.2</td><td>128.5</td><td>100%</td><td>67</td></tr><tr><td>tv4 (validateResult)</td><td>153.6</td><td>65.5</td><td>94.7%</td><td>131</td></tr><tr><td>tv4 (validateMultiple)</td><td>155.3</td><td>66.3</td><td>94.7%</td><td>129</td></tr><tr><td>json-model@0.2.1 (sanity check)</td><td>2.5</td><td>1</td><td>100%</td><td>8159</td></tr></table>
+<JM--{"key":"GET tmp://8478625870775431","path":"","tag":"table","attrs":{"width":"100%"}}-->
 <!--SPEEDEND-->
 
 As you can see, the first time you compile a validator it is definitely slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema multiple times, then this will probably end up faster.

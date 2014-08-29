@@ -38,12 +38,18 @@ describe('Basic model', function () {
 		assert.equal(model.path('/0'), model.item(0));
 	});
 	
-	it('schemas', function () {
+	it('schemas and links', function () {
 		var schemaUrl = '/schemas/test' + Math.random();
 		api.schemaStore.add(schemaUrl, {
 			type: 'object', 
 			properties: {
-				'foo': {type: 'string'},
+				'foo': {
+					type: 'string',
+					links: [{
+						href: '/{$}',
+						rel: "test"
+					}]
+				},
 				'bar': {type: 'integer'}
 			}
 		});
@@ -57,6 +63,10 @@ describe('Basic model', function () {
 		assert.isTrue(model.hasSchema(schemaUrl));
 		assert.isFalse(model.hasSchema(schemaUrl + '1234'));
 		assert.isTrue(model.hasSchema('/foo', schemaUrl + '#/properties/foo'));
+		
+		assert.deepEqual(model.prop('foo').links(), [{href: '/hello', rel: 'test'}]);
+		assert.deepEqual(model.prop('foo').links('test'), [{href: '/hello', rel: 'test'}]);
+		assert.deepEqual(model.prop('foo').links('other'), []);
 	});
 
 	it('missing schema', function (done) {

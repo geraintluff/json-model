@@ -829,7 +829,6 @@
 				validation += '}\n';
 			}
 			if (this.config.linkAssignment && Array.isArray(schema.links) && schema.links.length) {
-				var oldValidation = validation;
 				validation += 'linkMap[' + dataPathExpr + '] = (linkMap[' + dataPathExpr + '] || []).concat([\n';
 				validation += schema.links.map(function (ldo, index) {
 					var lines = [];
@@ -853,7 +852,6 @@
 								type: ((schema.properties || {})[''] || {}).type
 							}
 						}
-						console.log(property);
 						property = decodeURIComponent(property);
 						return {
 							code: propertyExpression(valueExpr, property),
@@ -868,7 +866,6 @@
 					return indent('{\n' + lines.map(indent).join(',\n') + '\n}');
 				}.bind(this)).join(',\n');
 				validation += '\n]);\n';
-				console.log(validation.substring(oldValidation.length));
 			}
 
 			if (schema.allOf) {

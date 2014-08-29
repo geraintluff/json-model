@@ -161,7 +161,7 @@
 	};
 	
 	var schemaStore, generator, generatedClasses;
-	var generatorConfig = {classes: false, assignment: true, trackMissing: true, schemaStore: schemaStore};
+	var generatorConfig = {classes: false, assignment: true, linkAssignment: true, trackMissing: true, schemaStore: schemaStore};
 	var clean = api.clean = function setupClean(callback) {
 		if (callback) {
 			// If possible, delay cleaning until schemas fetched
@@ -185,8 +185,10 @@
 		var transform = function (validatorErrors) {
 			return function (data) {
 				var schemaMap = {};
-				var errors = validatorErrors(data, "", schemaMap);
-				return {valid: !errors.length, errors: errors, schemas: schemaMap};
+				var linkMap = {};
+				var missingMap = {};
+				var errors = validatorErrors(data, "", schemaMap, linkMap, missingMap);
+				return {valid: !errors.length, errors: errors, schemas: schemaMap, links: linkMap, missing: missingMap};
 			};
 		};
 		
@@ -202,9 +204,9 @@
 				generator.addSchema(schema);
 			}
 			var name = generator.classNameForUrl(schema);
-			var validator = function (data, dataPath, schemaMap, missingMap) {
+			var validator = function (data, dataPath, schemaMap, linkMap, missingMap) {
 				if (generatedClasses[name]) {
-					return generatedClasses[name].validationErrors(data, dataPath, schemaMap, missingMap);
+					return generatedClasses[name].validationErrors(data, dataPath, schemaMap, linkMap, missingMap);
 				} else {
 					if (schemaMap) {
 						schemaMap[''] = schemaMap[''] || [];
@@ -312,17 +314,19 @@
 		var value = null;
 		var validatorFunctions = [];
 		var schemaMap = {};
+		var linkMap = {};
 		var missingSchemas = {};
 		var errors = [];
 		var pendingSchemaRecalculate = false;
 
 		function recalculateSchemas() {
 			schemaMap = {};
+			linkMap = {};
 			missingSchemas = {};
 			errors = [];
 			// Recalculate schemas (from scratch for now - TODO: we'll improve this later!)
 			for (var i = 0; i < validatorFunctions.length; i++) {
-				errors = errors.concat(validatorFunctions[i](value, "", schemaMap, missingSchemas));
+				errors = errors.concat(validatorFunctions[i](value, "", schemaMap, linkMap, missingSchemas));
 			}
 		}
 		// Trigger schema-change events for a tree (with optional ignored child)
@@ -456,6 +460,17 @@
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
 		};
+		this.getPathLinks = function (path, filter) {
+			console.log(path, filter);
+			var result = [];
+			if (path in linkMap) {
+				linkMap[path].forEach(function (link) {
+					if (typeof filter === 'string' && filter !== link.rel) return;
+					result.push(link);
+				});
+			}
+			return result;
+		};
 		this.getPathErrors = function (path, includeSchemaErrors, immediateOnly) {
 			path = path || "";
 			var result = errors.filter(function (error) {
@@ -495,6 +510,15 @@
 	RootModel.prototype = {
 	};
 	
+	function normPathSpec(pathSpec) {
+		if (pathSpec == null) pathSpec = "";
+		pathSpec = pathSpec + "";
+		if (pathSpec && pathSpec.charAt(0) !== "/") {
+			pathSpec = "/" + pointerEscape(pathSpec);
+		}
+		return pathSpec;
+	}
+	
 	function Model(rootModel, path) {
 		this._root = rootModel;
 		this._path = path;
@@ -532,32 +556,17 @@
 			this._root.whenReady(callback.bind(null, null, this));
 		},
 		get: function (pathSpec) {
-			if (pathSpec == null) pathSpec = "";
-			pathSpec = pathSpec + "";
-			if (pathSpec && pathSpec.charAt(0) !== "/") {
-				pathSpec = "/" + pointerEscape(pathSpec);
-			}
-			return this._root.getPathValue(this._path + pathSpec);
+			return this._root.getPathValue(this._path + normPathSpec(pathSpec));
 		},
 		set: function (pathSpec, value) {
 			if (arguments.length < 2) {
 				value = pathSpec;
 				pathSpec = "";
 			}
-			if (pathSpec == null) pathSpec = "";
-			pathSpec = pathSpec + "";
-			if (pathSpec && pathSpec.charAt(0) !== "/") {
-				pathSpec = "/" + pointerEscape(pathSpec);
-			}
-			return this._root.setPathValue(this._path + pathSpec, value);
+			return this._root.setPathValue(this._path + normPathSpec(pathSpec), value);
 		},
 		path: function (pathSpec) {
-			if (pathSpec == null) pathSpec = "";
-			pathSpec = pathSpec + "";
-			if (pathSpec && pathSpec.charAt(0) !== "/") {
-				pathSpec = "/" + pointerEscape(pathSpec);
-			}
-			return this._root.modelForPath(this._path + pathSpec);
+			return this._root.modelForPath(this._path + normPathSpec(pathSpec));
 		},
 		pointer: function () {
 			return this._path;
@@ -631,12 +640,10 @@
 			}
 		},
 		schemas: function (pathSpec) {
-			if (pathSpec == null) pathSpec = "";
-			pathSpec = pathSpec + "";
-			if (pathSpec && pathSpec.charAt(0) !== "/") {
-				pathSpec = "/" + pointerEscape(pathSpec);
-			}
-			return this._root.getPathSchemas(this._path + pathSpec);
+			return this._root.getPathSchemas(this._path + normPathSpec(pathSpec));
+		},
+		links: function (filter) {
+			return this._root.getPathLinks(this._path, filter);
 		},
 		hasSchema: function (pathSpec, url) {
 			if (typeof url !== 'string') {

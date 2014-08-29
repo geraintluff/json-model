@@ -122,7 +122,6 @@ module.exports = function (grunt) {
 		
 		var referenceResult = reference.runTests(tests, targetMs, maxRepeats);
 		var targetMs = Math.round(referenceResult.ms*referenceResult.repeats);
-		referenceResult.relativeTime = 1;
 		console.log(referenceResult);
 		console.log('-------- target ms: ' + targetMs + ' --------');
 		var results = alternatives.map(function (validator) {
@@ -136,6 +135,7 @@ module.exports = function (grunt) {
 		if (secondReferenceResult.ms > referenceResult.ms) {
 			referenceResult = secondReferenceResult;
 		}
+		referenceResult.relativeTime = 1;
 		results.forEach(function (result) {
 			result.relativeTime = result.ms/referenceResult.ms;
 		});
