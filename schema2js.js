@@ -1,3 +1,4 @@
+//48ca14309f9d04d3a1b55b77e5e9a300a3b5f0e0
 (function (global, factory) {
 	if (typeof define === 'function' && define.amd) {
 		// AMD. Register as an anonymous module.
@@ -65,6 +66,9 @@
 		}
 		return false;
 	}
+	api.util = {
+		resolveUrl: resolveUrl
+	};
 	
 	var SchemaStore = api.SchemaStore = function SchemaStore(parent) {
 		this.schemas = parent ? Object.create(parent.schemas) : {};
@@ -859,9 +863,16 @@
 						};
 					}, template));
 					lines.push('rel: ' + JSON.stringify(ldo.rel));
+					if (ldo.method) {
+						lines.push('method: ' + JSON.stringify(ldo.method));
+					}
 					if (ldo.schema) {
 						var subUrl = (ldo.schema.id) || this.extendUrl(schemaUrl, ['links', index, 'schema']);
 						lines.push('schema: ' + JSON.stringify(subUrl));
+					}
+					if (ldo.targetSchema) {
+						var subUrl = (ldo.schema.id) || this.extendUrl(schemaUrl, ['links', index, 'targetSchema']);
+						lines.push('targetSchema: ' + JSON.stringify(subUrl));
 					}
 					return indent('{\n' + lines.map(indent).join(',\n') + '\n}');
 				}.bind(this)).join(',\n');

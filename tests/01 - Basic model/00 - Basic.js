@@ -2,8 +2,8 @@ var api = require('../../');
 var assert = require('chai').assert;
 
 describe('Basic model', function () {
-	afterEach(function(){
-		api.clean();
+	afterEach(function(done){
+		api.clean(done);
 	});
 	
 	it('creation, set/get', function () {
@@ -54,7 +54,7 @@ describe('Basic model', function () {
 			}
 		});
 		
-		var model = api.create({foo: 'hello'}, [schemaUrl]);
+		var model = api.create({foo: 'hello'}, 'http://example.com/1/2/3', [schemaUrl]);
 		
 		assert.deepEqual(model.schemas(), [schemaUrl]);
 		assert.deepEqual(model.schemas('foo'), [schemaUrl + '#/properties/foo']);
@@ -64,8 +64,11 @@ describe('Basic model', function () {
 		assert.isFalse(model.hasSchema(schemaUrl + '1234'));
 		assert.isTrue(model.hasSchema('/foo', schemaUrl + '#/properties/foo'));
 		
-		assert.deepEqual(model.prop('foo').links(), [{href: '/hello', rel: 'test'}]);
-		assert.deepEqual(model.prop('foo').links('test'), [{href: '/hello', rel: 'test'}]);
+		assert.deepEqual(model.prop('foo').links().length, 1);
+		assert.deepEqual(model.prop('foo').links()[0].href, 'http://example.com/hello');
+		assert.deepEqual(model.prop('foo').links()[0].rel, 'test');
+		assert.deepEqual(model.prop('foo').links()[0].method, 'GET');
+		assert.deepEqual(model.prop('foo').links(), model.prop('foo').links());
 		assert.deepEqual(model.prop('foo').links('other'), []);
 	});
 

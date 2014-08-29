@@ -71,11 +71,14 @@
 		};
 	};
 	
+	var resolveUrl = schema2js.util.resolveUrl;
+	
 	api.util = {
 		pointerEscape: pointerEscape,
 		pointerUnescape: pointerUnescape,
 		splitHeader: splitHeader,
 		parseLink: parseLink,
+		resolveUrl: resolveUrl,
 		timer: {
 			asap: asap,
 			wait: timerWait
@@ -303,7 +306,7 @@
 		};
 		var pendingOperations = 0;
 		this.pendingOperation = function () {
-			ready = false;
+			this.ready = false;
 			pendingOperations++;
 			return decrementPendingOperations;
 		};
@@ -466,15 +469,17 @@
 			return (schemaMap[path] || []).slice(0);
 		};
 		this.getPathLinks = function (path, filter) {
-			console.log(path, filter);
-			var result = [];
-			if (path in linkMap) {
-				linkMap[path].forEach(function (link) {
-					if (typeof filter === 'string' && filter !== link.rel) return;
-					result.push(link);
-				});
+			var thisRootModel = this;
+			var result = linkMap[path] || [];
+			if (!path && this.http.headers.link) {
+				result = result.concat(splitHeader(this.http.headers.link).map(parseLink));
 			}
-			return result;
+			return result.filter(function (link) {
+				if (typeof filter === 'string' && filter !== link.rel) return false;
+				return true;
+			}).map(function (link) {
+				return new Link(thisRootModel, link);
+			});
 		};
 		this.getPathErrors = function (path, includeSchemaErrors, immediateOnly) {
 			path = path || "";
@@ -650,6 +655,9 @@
 		links: function (filter) {
 			return this._root.getPathLinks(this._path, filter);
 		},
+		link: function (filter, index) {
+			return this.links(filter)[index || 0] || null;
+		},
 		hasSchema: function (pathSpec, url) {
 			if (typeof url !== 'string') {
 				url = pathSpec;
@@ -683,6 +691,22 @@
 		}
 	};
 	EventEmitter.addMethods(Model.prototype);
+	
+	function Link(rootModel, obj) {
+		this._root = rootModel;
+		this.href = resolveUrl(rootModel.url, obj.href);
+		this.rel = obj.rel;
+		this.method = obj.method || 'GET';
+	}
+	Link.prototype = {
+		open: function (data, callback) {
+			if (typeof data === 'function') {
+				callback = data;
+				data = null;
+			}
+			return this._root.dataStore.open(this, callback);
+		}
+	};
 	
 	var pendingRequests = {};
 	var requestErrors = {};
@@ -737,7 +761,12 @@
 		asap(checkSchemasFetched);
 	}
 	
-	function DataStore(parent) {
+	function DataStore(parent, baseUrl) {
+		if (typeof parent === 'string') {
+			baseUrl = parent;
+			parent = null;
+		}
+		this.baseUrl = baseUrl || (parent ? parent.baseUrl : '');
 		this.parent = parent;
 		this.config = parent ? Object.create(parent.config) : {
 			keepMs: 1000
@@ -749,10 +778,11 @@
 		normParams: function (params) {
 			if (typeof params === 'string') return this.normParams({url: params});
 			return {
-				url: params.url.replace(/#.*/, ''),
-				fragment: params.url.replace(/[^#]*#?/, ''),
+				url: resolveUrl(this.baseUrl, (params.url || params.href)).replace(/#.*/, ''),
+				fragment: (params.url || params.href).replace(/[^#]*#?/, ''),
 				method: (params.method || 'GET').toUpperCase(),
-				headers: params.headers || {}
+				headers: params.headers || {},
+				targetSchema: ((params.targetSchema || params.hint) ? [params.targetSchema || params.hint] : [])
 			};
 		},
 		_pokeRootModel: function (storeKey, model) {
@@ -775,13 +805,9 @@
 		_keyForParams: function (params) {
 			return params.method + ' ' + params.url;
 		},
-		open: function (params, hintSchemas, callback) {
+		open: function (params, callback) {
 			var thisStore = this;
 			
-			if (typeof hintSchemas === 'function') {
-				callback = hintSchemas;
-				hintSchemas = null;
-			}
 			params = this.normParams(params);
 			var fragment = params.url.replace(/^[^#]*#?/, '');
 			params.url = params.url.replace(/#.*/, '');
@@ -789,11 +815,16 @@
 			if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
 			
 			var storeKey = this._keyForParams(params);
+			var cached = this._getRootModel(storeKey);
 			var rootModel = this._getRootModel(storeKey, true);
 			rootModel.url = params.url;
-			var pendingDone = rootModel.pendingOperation();
 			var model = rootModel.modelForPath('');
-		
+			if (cached) {
+				console.log('Cached:', storeKey);
+				return model;
+			}
+
+			var pendingDone = rootModel.pendingOperation();
 			requestFunction(params, function (error, data, status, headers) {
 				var schemas = [];
 				var newHeaders = {};
@@ -807,7 +838,8 @@
 					}
 				});
 				if (!schemas.length && !error) {
-					schemas = hintSchemas || [];
+					schemas = [];
+					if (params.targetSchema) schemas.push(params.targetSchema);
 				}
 			
 				rootModel.reset((typeof data !== 'undefined') ? data : null, schemas);
@@ -861,6 +893,9 @@
 	};
 	
 	api.dataStore = new DataStore();
+	if (typeof window !== 'undefined' && window && window.location && typeof window.location.href === 'string') {
+		api.dataStore.baseUrl = window.location.href;
+	}
 	
 	api.open = function (params, hintSchemas, callback) {
 		return api.dataStore.open(params, hintSchemas, callback);
