@@ -190,12 +190,17 @@ module.exports = function (grunt) {
 		});
 		
 		var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
-		readme = readme.replace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end) {
+		readme.asyncReplace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end, callback) {
 			var model = jsonModel.create([referenceResult].concat(results), null, 'tmp://comparison');
+			var context = jsonModel.bindings.context();
 			var html = model.html('table', {width: '100%'});
-			return start + '\n' + html  + '\n' + end;
+			context.expandHtml(html, function (error, html) {
+				callback(error, start + '\n' + html  + '\n' + end);
+			});
+		}, function (error, readme) {
+			if (error) throw error;
+			fs.writeFileSync(__dirname + '/README.md', readme);
 		});
-		fs.writeFileSync(__dirname + '/README.md', readme);
 	});
 
 	// main cli commands
