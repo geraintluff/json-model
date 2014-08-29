@@ -380,6 +380,9 @@
 			pendingOperations++;
 			validatorFunctions = (schemas || []).map(function (schema) {
 				pendingOperations++;
+				if (typeof schema === 'string') {
+					schema = resolveUrl(thisRootModel.url || this.dataStore.baseUrl, schema);
+				}
 				return api.validationErrors(schema, decrementPendingOperations);
 			});
 			this.ready = (pendingOperations <= 1) && !validatorFunctions.length || api.schemasFetched();
@@ -821,6 +824,7 @@
 			var model = rootModel.modelForPath('');
 			if (cached) {
 				console.log('Cached:', storeKey);
+				if (callback) model.whenReady(callback);
 				return model;
 			}
 

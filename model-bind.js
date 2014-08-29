@@ -39,12 +39,6 @@
 		cullSize = cullSize || 3;
 		var diff = diffDom(subject, target, cullSize);
 		executeDiffDom(subject, target, diff);
-
-		console.log(subject.outerHTML);
-		setTimeout(function () {
-			var diff = diffDom(subject, old, cullSize);
-			executeDiffDom(subject, old, diff);
-		}, 1000);
 	}
 	function executeDiffDom(subject, target, diff) {
 		var path = diff.path;
@@ -121,7 +115,6 @@
 		var subjectCount = subject.childNodes.length;
 		var targetCount = target.childNodes.length;
 		var diagonal = 1, endDiagonal = subjectCount + targetCount + 1;
-		var notes = {what: 'merge' + subject + ' --> ' + target, subjectCount: subjectCount, targetCount: targetCount, endDiagonal: endDiagonal};
 		while (diagonal < endDiagonal) {
 			var newOptions = [];
 			for (var subjectIndex = Math.max(0, diagonal - targetCount); subjectIndex <= subjectCount && subjectIndex <= diagonal; subjectIndex++) {
@@ -163,7 +156,6 @@
 			diagonal++;
 		}
 		var result = options[subjectCount];
-		result.notes = notes;
 		return result;
 	}
 
@@ -730,26 +722,29 @@
 
 			model.whenReady(function () {
 				var binding = thisContext._bindings.select(model, tag, attrs);
-				var innerHtml = binding.html(model, tag, attrs);
+				
+				function processHtml(error, innerHtml) {
+					innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+						try {
+							data = JSON.parse(data);
+						} catch (e) {
+							error = error || e;
+							return thisContext.errorHtml(e);
+						}
+						data.attrs = data.attrs || {};
+						data.attrs[dataPropertyStoreKey] = data.key;
+						data.attrs[dataPropertyPath];
+						return openTag(data.tag, data.attrs) + closeTag(data.tag);
+					});
+					hostElement.innerHTML = innerHtml;
 
-				var error = null;
-				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
-					try {
-						data = JSON.parse(data);
-					} catch (e) {
-						error = error || e;
-						return thisContext.errorHtml(e);
-					}
-					data.attrs[dataPropertyStoreKey] = data.key;
-					data.attrs[dataPropertyPath];
-					return openTag(data.tag, data.attrs) + closeTag(data.tag);
-				});
-				// DEBUG
-				innerHtml = innerHtml.replace('<body>', '<body>TRANSFORMED');
+					callback(error, hostElement);
+				}
 				
-				hostElement.innerHTML = innerHtml;
-				
-				callback(error, hostElement);
+				var innerHtml = binding.html(model, tag, attrs, processHtml);
+				if (typeof innerHtml === 'string') {
+					processHtml(null, innerHtml);
+				}
 			});
 		},
 		bind: function (model, element, callback) {
@@ -760,7 +755,8 @@
 				element = document.getElementById('string');
 			}
 			this._renderDom(model, element, function (error, dom) {
-				coerceDom(element, dom);
+				if (dom) coerceDom(element, dom);
+				if (callback) callback(error);
 			});
 		}
 	};
