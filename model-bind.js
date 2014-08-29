@@ -4,21 +4,12 @@
 		define(['json-model'], factory);
 	} else if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('./model'), require('xmldom'));
+		module.exports = factory(require('./model'));
 	} else {
 		// Browser globals
 		global.JsonModel = factory(global.JsonModel);
 	}
-})(this, function (api, DOMParser) {
-	// Hackity-hack!
-	DOMParser = DOMParser || {
-		parse: function (html) {
-			var container = document.createElement('div');
-			container.innerHTML = html;
-			container.document.Element = container.childNodes[0];
-			return container;
-		}
-	};
+})(this, function (api) {
 
 	var asap = api.util.timer.asap;
 	
@@ -42,6 +33,7 @@
 		return '</' + tagName + '>';
 	}
 
+	/*
 	function Dom(tag, attrs, children) {
 		if (!(this instanceof Dom)) return new Dom(tag, attrs, children);
 		this.tag = tag;
@@ -301,6 +293,7 @@
 		}
 	};
 	api.Dom = Dom;
+	*/
 	
 	function Binding(bindObj, registerIndex) {
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
@@ -352,17 +345,22 @@
 
 		if (typeof bindObj.html === 'function') {
 			this.html = bindObj.html.bind(bindObj);
+			/*
 			this.dom = function (model, tagName, attrs) {
 				return Dom.fromHtml(bindObj.html(model, tagName, attrs), model);
 			}
+			*/
 		} else if (typeof bindObj.html === 'string') {
 			this.html = function () {return bindObj.html;};
+			/*
 			var dom = Dom.fromHtml(bindObj.html);
 			this.dom = function () {return dom;};
+		
 		} else if (bindObj.dom instanceof Dom) {
 			this.dom = function () {return bindObj.dom;};
 		} else {
 			this.dom = bindObj.dom;
+			*/
 		}
 		//this.bind = bindObj.bind;
 		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
@@ -370,10 +368,12 @@
 		};
 	}
 	Binding.prototype = {
+		/*
 		html: function (model, tagName, attrs) {
 			var dom = this.dom(model, tagName, attrs);
 			return dom.innerHtml();
 		}
+		*/
 	};
 	
 	var placeholderStart = Math.random().toString().substring(2);
@@ -525,6 +525,8 @@
 	//    Could introduce secret/random component to fight this
 	var magicPlaceholders = ['<JM--', '-->']; 
 	var magicRegex = /<JM--(.*?)-->/g;
+	var dataPropertyStoreKey = 'data-JMstoreKey';
+	var dataPropertyPath = 'data-JMpath';
 	function BindingContext(bindings, dataStore) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
@@ -533,7 +535,7 @@
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
 		},
-		renderHtml: function (model, tag, attrs, callback) {
+		_renderHtml: function (model, tag, attrs, callback) {
 			var thisContext = this;
 			tag = tag || 'span';
 			attrs = attrs || {};
@@ -565,8 +567,55 @@
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				thisContext.renderHtml(model, data.tag, data.attrs, callback);
+				thisContext._renderHtml(model, data.tag, data.attrs, callback);
 			}, callback);
+		},
+		_renderDom: function (model, element, callback) {
+			var thisContext = this;
+			
+			var hostElement = element.cloneNode(false);
+
+			var tag = hostElement.tagName.toLowerCase();
+			var attrs = {};
+			for (var i = 0; i < hostElement.attributes.length; i++) {
+				var attribute = hostElement.attributes[i];
+				attrs[attribute.name] = attribute.value;
+			}
+
+			model.whenReady(function () {
+				var binding = thisContext._bindings.select(model, tag, attrs);
+				var innerHtml = binding.html(model, tag, attrs);
+
+				var error = null;
+				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+					try {
+						data = JSON.parse(data);
+					} catch (e) {
+						error = error || e;
+						return thisContext.errorHtml(e);
+					}
+					data.attrs[dataPropertyStoreKey] = data.key;
+					data.attrs[dataPropertyPath];
+					return openTag(data.tag, data.attrs) + closeTag(data.tag);
+				});
+				// DEBUG
+				innerHtml = innerHtml.replace('<body>', '<body>TRANSFORMED');
+				
+				hostElement.innerHTML = innerHtml;
+				
+				callback(error, hostElement);
+			});
+		},
+		bind: function (model, element, callback) {
+			if (!api.is(model)) {
+				model = this.dataStore.open(model);
+			}
+			if (typeof element === 'string') {
+				element = document.getElementById('string');
+			}
+			this._renderDom(model, element, function (error, dom) {
+				console.log(error, dom, dom.outerHTML);
+			});
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {

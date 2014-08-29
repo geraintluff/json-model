@@ -303,7 +303,7 @@
 		};
 		var pendingOperations = 0;
 		this.pendingOperation = function () {
-			ready = false;
+			this.ready = false;
 			pendingOperations++;
 			return decrementPendingOperations;
 		};

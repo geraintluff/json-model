@@ -139,7 +139,7 @@ Schemas are compiled into validators (generating custom JS code), which has an u
 Here's a table of measured times for various validation setups (using the [JSON Schema Test Suite](https://github.com/json-schema/JSON-Schema-Test-Suite)) on Node:
 
 <!--SPEEDSTART-->
-<JM--{"key":"GET tmp://8478625870775431","path":"","tag":"table","attrs":{"width":"100%"}}-->
+<JM--{"key":"GET tmp://18934176629409194","path":"","tag":"table","attrs":{"width":"100%"}}-->
 <!--SPEEDEND-->
 
 As you can see, the first time you compile a validator it is definitely slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema multiple times, then this will probably end up faster.
