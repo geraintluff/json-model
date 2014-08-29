@@ -23,7 +23,6 @@
   "author": "Geraint Luff",
   "license": "MIT",
   "dependencies": {
-    "xmldom": "~0.1.19"
   },
   "devDependencies": {
     "chai": "~1.9.1",

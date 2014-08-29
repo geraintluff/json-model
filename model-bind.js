@@ -4,21 +4,12 @@
 		define(['json-model'], factory);
 	} else if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('./model'), require('xmldom'));
+		module.exports = factory(require('./model'));
 	} else {
 		// Browser globals
 		global.JsonModel = factory(global.JsonModel);
 	}
-})(this, function (api, DOMParser) {
-	// Hackity-hack!
-	DOMParser = DOMParser || {
-		parse: function (html) {
-			var container = document.createElement('div');
-			container.innerHTML = html;
-			container.document.Element = container.childNodes[0];
-			return container;
-		}
-	};
+})(this, function (api) {
 
 	var asap = api.util.timer.asap;
 	var resolveUrl = api.util.resolveUrl;
@@ -38,11 +29,145 @@
 		html += '>';
 		return html;
 	}
-	
 	function closeTag(tagName) {
 		return '</' + tagName + '>';
 	}
+	
+	function coerceDom(subject, target, cullSize) {
+		var old = subject.cloneNode(true);
 
+		cullSize = cullSize || 3;
+		var diff = diffDom(subject, target, cullSize);
+		executeDiffDom(subject, target, diff);
+
+		console.log(subject.outerHTML);
+		setTimeout(function () {
+			var diff = diffDom(subject, old, cullSize);
+			executeDiffDom(subject, old, diff);
+		}, 1000);
+	}
+	function executeDiffDom(subject, target, diff) {
+		var path = diff.path;
+		if (!path) {
+			subject.nodeValue = target.nodeValue;
+			return;
+		}
+
+		// Assign all attributes
+		for (var i = 0; i < target.attributes.length; i++) {
+			var key = target.attributes[i].name, value = target.attributes[i].value;
+			subject.setAttribute(key, value);
+		}
+		var subjectAttributes = [];
+		for (var i = 0; i < subject.attributes.length; i++) {
+			var key = subject.attributes[i].name;
+			subjectAttributes.push(key);
+		}
+		subjectAttributes.forEach(function (key) {
+			if (!target.hasAttribute(key)) {
+				subject.removeAttribute(key);
+			}
+		});
+		
+		var subjectOffset = -1;
+		var targetOffset = -1;
+		for (var diagonal = 1; diagonal < path.length; diagonal++) {
+			var subjectIndex = path[diagonal];
+			if (subjectIndex === null) continue;
+			var lastSubjectIndex = path[diagonal - 1];
+			if (lastSubjectIndex === null) {
+				var subjectChild = subject.childNodes[subjectIndex + subjectOffset];
+				var targetChild = target.childNodes[diagonal - subjectIndex + targetOffset];
+				executeDiffDom(subjectChild, targetChild, diff.actions[diagonal - 1]);
+			} else if (lastSubjectIndex === subjectIndex) {
+				subjectOffset++;
+				var subjectChild = subject.childNodes[subjectIndex + subjectOffset];
+				var targetChild = target.childNodes[diagonal - subjectIndex + targetOffset];
+				target.removeChild(targetChild);
+				subject.insertBefore(targetChild, subjectChild);
+				targetOffset--;
+			} else {
+				var subjectChild = subject.childNodes[subjectIndex + subjectOffset];
+				subject.removeChild(subjectChild);
+				subjectOffset--;
+			}
+		}
+	}
+	function diffDom(subject, target, cullSize) {
+		if (subject.nodeType !== target.nodeType) return;
+		if (subject.nodeType !== 1) return {score: 0.5};
+		if (subject.tagName !== target.tagName) return;
+		if (subject.tagName === 'input' && subject.type !== target.type) return;
+
+		// Score based on proportion of correct attributes
+		var attributesTotal = 1, attributesCorrect = 1;
+		for (var i = 0; i < subject.attributes.length; i++) {
+			attributesTotal++;
+			var key = subject.attributes[i].name, value = subject.attributes[i].value;
+			if (target.getAttribute(i) === value) {
+				attributesCorrect++;
+			}
+		}
+		for (var i = 0; i < target.attributes.length; i++) {
+			if (!subject.hasAttribute(target.attributes[i].name)) {
+				attributesTotal++;
+			}
+		}
+		var score = attributesCorrect/attributesTotal;
+		
+		var options = [{score: score, path: [0], actions: []}];
+		var prevOptions = [];
+		
+		var subjectCount = subject.childNodes.length;
+		var targetCount = target.childNodes.length;
+		var diagonal = 1, endDiagonal = subjectCount + targetCount + 1;
+		var notes = {what: 'merge' + subject + ' --> ' + target, subjectCount: subjectCount, targetCount: targetCount, endDiagonal: endDiagonal};
+		while (diagonal < endDiagonal) {
+			var newOptions = [];
+			for (var subjectIndex = Math.max(0, diagonal - targetCount); subjectIndex <= subjectCount && subjectIndex <= diagonal; subjectIndex++) {
+				var subjectNode = subject.childNodes[subjectIndex - 1];
+				var targetNode = target.childNodes[diagonal - subjectIndex - 1];
+				var best = {score: -1}, bestScore = -1;
+				var addFrom = options[subjectIndex];
+				if (addFrom) {
+					var score = 0;
+					if (score > bestScore) {
+						best = {score: addFrom.score + score, path: addFrom.path.concat([subjectIndex]), actions: addFrom.actions.concat(['add ' + targetNode])};
+					}
+				}
+				var removeFrom = options[subjectIndex - 1];
+				if (removeFrom) {
+					var score = 0;
+					if (score > bestScore) {
+						best = {score: removeFrom.score + score, path: removeFrom.path.concat([subjectIndex]), actions: removeFrom.actions.concat(['remove' + subjectNode])};
+					}
+				}
+				var mergeFrom = prevOptions[subjectIndex - 1];
+				if (mergeFrom) {
+					var diff = diffDom(subjectNode, targetNode, cullSize) || {score: -Infinity};
+					if (diff.score > bestScore) {
+						best = {score: mergeFrom.score + diff.score, path: mergeFrom.path.concat([null, subjectIndex]), actions: mergeFrom.actions.concat(['merge ' + subjectNode + ' -> ' + targetNode, diff])};
+					}
+				}
+				newOptions[subjectIndex] = best;
+			}
+			prevOptions = options;
+			options = newOptions.slice(0);
+			newOptions.sort(function (a, b) {
+				return b.score - a.score;
+			});
+			options = options.map(function (option) {
+				if (newOptions.indexOf(option) < cullSize) return option;
+				return null;
+			});
+			diagonal++;
+		}
+		var result = options[subjectCount];
+		result.notes = notes;
+		return result;
+	}
+
+	/*
 	function Dom(tag, attrs, children) {
 		if (!(this instanceof Dom)) return new Dom(tag, attrs, children);
 		this.tag = tag;
@@ -302,6 +427,7 @@
 		}
 	};
 	api.Dom = Dom;
+	*/
 	
 	function Binding(bindObj, registerIndex) {
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
@@ -355,17 +481,22 @@
 
 		if (typeof bindObj.html === 'function') {
 			this.html = bindObj.html.bind(bindObj);
+			/*
 			this.dom = function (model, tagName, attrs) {
 				return Dom.fromHtml(bindObj.html(model, tagName, attrs), model);
 			}
+			*/
 		} else if (typeof bindObj.html === 'string') {
 			this.html = function () {return bindObj.html;};
+			/*
 			var dom = Dom.fromHtml(bindObj.html);
 			this.dom = function () {return dom;};
+		
 		} else if (bindObj.dom instanceof Dom) {
 			this.dom = function () {return bindObj.dom;};
 		} else {
 			this.dom = bindObj.dom;
+			*/
 		}
 		//this.bind = bindObj.bind;
 		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
@@ -373,10 +504,12 @@
 		};
 	}
 	Binding.prototype = {
+		/*
 		html: function (model, tagName, attrs) {
 			var dom = this.dom(model, tagName, attrs);
 			return dom.innerHtml();
 		}
+		*/
 	};
 	
 	var placeholderStart = Math.random().toString().substring(2);
@@ -528,6 +661,8 @@
 	//    Could introduce secret/random component to fight this
 	var magicPlaceholders = ['<JM--', '-->']; 
 	var magicRegex = /<JM--(.*?)-->/g;
+	var dataPropertyStoreKey = 'data-JMstoreKey';
+	var dataPropertyPath = 'data-JMpath';
 	function BindingContext(bindings, dataStore) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
@@ -536,7 +671,7 @@
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
 		},
-		renderHtml: function (model, tag, attrs, callback) {
+		_renderHtml: function (model, tag, attrs, callback) {
 			var thisContext = this;
 			tag = tag || 'span';
 			attrs = attrs || {};
@@ -578,8 +713,55 @@
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				thisContext.renderHtml(model, data.tag, data.attrs, callback);
+				thisContext._renderHtml(model, data.tag, data.attrs, callback);
 			}, callback);
+		},
+		_renderDom: function (model, element, callback) {
+			var thisContext = this;
+			
+			var hostElement = element.cloneNode(false);
+
+			var tag = hostElement.tagName.toLowerCase();
+			var attrs = {};
+			for (var i = 0; i < hostElement.attributes.length; i++) {
+				var attribute = hostElement.attributes[i];
+				attrs[attribute.name] = attribute.value;
+			}
+
+			model.whenReady(function () {
+				var binding = thisContext._bindings.select(model, tag, attrs);
+				var innerHtml = binding.html(model, tag, attrs);
+
+				var error = null;
+				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+					try {
+						data = JSON.parse(data);
+					} catch (e) {
+						error = error || e;
+						return thisContext.errorHtml(e);
+					}
+					data.attrs[dataPropertyStoreKey] = data.key;
+					data.attrs[dataPropertyPath];
+					return openTag(data.tag, data.attrs) + closeTag(data.tag);
+				});
+				// DEBUG
+				innerHtml = innerHtml.replace('<body>', '<body>TRANSFORMED');
+				
+				hostElement.innerHTML = innerHtml;
+				
+				callback(error, hostElement);
+			});
+		},
+		bind: function (model, element, callback) {
+			if (!api.is(model)) {
+				model = this.dataStore.open(model);
+			}
+			if (typeof element === 'string') {
+				element = document.getElementById('string');
+			}
+			this._renderDom(model, element, function (error, dom) {
+				coerceDom(element, dom);
+			});
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {
