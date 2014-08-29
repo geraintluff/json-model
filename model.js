@@ -301,15 +301,20 @@
 			if (this.ready) return asap(callback);
 			whenReadyCallbacks.push(callback);
 		};
-		var pendingValidators = 0;
-		function decrementPendingValidators() {
-			if (!--pendingValidators) {
+		var pendingOperations = 0;
+		this.pendingOperation = function () {
+			ready = false;
+			pendingOperations++;
+			return decrementPendingOperations;
+		};
+		function decrementPendingOperations() {
+			if (!--pendingOperations) {
 				thisRootModel.ready = true;
 				while (whenReadyCallbacks.length) {
 					whenReadyCallbacks.shift()();
 				}
 			}
-		}
+		};
 		
 		var value = null;
 		var validatorFunctions = [];
@@ -369,14 +374,14 @@
 		}
 		
 		this.reset = function (value, schemas) {
-			pendingValidators++;
+			pendingOperations++;
 			validatorFunctions = (schemas || []).map(function (schema) {
-				pendingValidators++;
-				return api.validationErrors(schema, decrementPendingValidators);
+				pendingOperations++;
+				return api.validationErrors(schema, decrementPendingOperations);
 			});
-			this.ready = !validatorFunctions.length || api.schemasFetched();
+			this.ready = (pendingOperations <= 1) && !validatorFunctions.length || api.schemasFetched();
 			this.setPathValue('', value);
-			asap(decrementPendingValidators);
+			asap(decrementPendingOperations);
 		};
 		
 		var models = {c: {}};
@@ -786,6 +791,7 @@
 			var storeKey = this._keyForParams(params);
 			var rootModel = this._getRootModel(storeKey, true);
 			rootModel.url = params.url;
+			var pendingDone = rootModel.pendingOperation();
 			var model = rootModel.modelForPath('');
 		
 			requestFunction(params, function (error, data, status, headers) {
@@ -806,6 +812,7 @@
 			
 				rootModel.reset((typeof data !== 'undefined') ? data : null, schemas);
 				rootModel.http = {status: status || null, headers: newHeaders};
+				pendingDone();
 
 				if (callback) {
 					model.whenReady(callback);
