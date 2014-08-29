@@ -429,7 +429,6 @@
 				}
 			}
 			
-			// If things are still being fetched, 
 			if (!this.ready && !pendingSchemaRecalculate) {
 				pendingSchemaRecalculate = true;
 				// We un-shift (instead of using whenReady) to make sure it executes first, before any other callbacks

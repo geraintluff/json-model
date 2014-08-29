@@ -283,25 +283,25 @@
 			var conditional = '';
 			if (hasPrefix(';')) {
 				if (varSuffix.indexOf('*') === -1) {
-					codeParts.push(JSON.stringify(';' + encodeURIComponent(varName)));
+					codeParts.push(JSON.stringify(';' + varName));
 					conditional = '=';
 				} else {
 					codeParts.push(JSON.stringify(';'));
 				}
 			} else if (hasPrefix('?') && index == 0) {
 				if (varSuffix.indexOf('*') === -1) {
-					codeParts.push(JSON.stringify('?' + encodeURIComponent(varName) + '='));
+					codeParts.push(JSON.stringify('?' + varName + '='));
 				} else {
 					codeParts.push(JSON.stringify('?'));
 				}
 			} else if (hasPrefix('?') || hasPrefix('&')) {
 				if (varSuffix.indexOf('*') === -1) {
-					codeParts.push(JSON.stringify('&' + encodeURIComponent(varName) + '='));
+					codeParts.push(JSON.stringify('&' + varName + '='));
 				} else {
 					codeParts.push(JSON.stringify('&'));
 				}
 			} else if (hasPrefix('&')) {
-				codeParts.push(JSON.stringify('&' + encodeURIComponent(varName) + '='));
+				codeParts.push(JSON.stringify('&' + varName + '='));
 			} else if (index > 0) {
 				if (hasPrefix('.')) {
 					codeParts.push('"."');
@@ -425,6 +425,7 @@
 			subErrors: (config.subErrors !== false) && true,
 			unicodeLength: config.unicodeLength !== false,
 			assignment: config.assignment || false,
+			linkAssignment: config.linkAssignment || false,
 			trackMissing: config.trackMissing || false,
 			classes: (config.classes !== false) && true
 		};
@@ -543,15 +544,9 @@
 					code += indent('return ' + propertyExpression('classes', aliasName) + '.validate(data);\n');
 					code += '};\n';
 					code += '/*' + JSON.stringify(this.config) + '*/\n';
-					if (this.config.assignment) {
-						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
-						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ');\n');
-						code += '};\n';
-					} else {
-						code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
-						code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path' + (this.config.trackMissing ? ', missing' : '') + ');\n');
-						code += '};\n';
-					}
+					code += propertyExpression('classes', urlName) + '.validationErrors = function (data, path' + (this.config.assignment ? ', schemaMap' : '') + (this.config.linkAssignment ? ', linkMap' : '') + (this.config.trackMissing ? ', missing' : '') + ') {\n';
+					code += indent('return ' + propertyExpression('classes', aliasName) + '.validationErrors(data, path' + (this.config.assignment ? ', schemaMap' : '') + (this.config.linkAssignment ? ', linkMap' : '') + (this.config.trackMissing ? ', missing' : '') + ');\n');
+					code += '};\n';
 				}
 			}
 			code += '\nreturn classes;\n';
@@ -740,10 +735,7 @@
 				body += indent('params = null;\n');
 				body += '}\n';
 				body += 'var href = ' + api.uriTemplate(function (property) {
-					var code = 'obj[' + JSON.stringify(property) + ']';
-					if (/^[a-zA-Z][a-zA-Z0-9]*$/.test(property)) {
-						code = 'obj.' + property;
-					}
+					var code = propertyExpression('obj', property);
 					return {
 						code: code,
 						type: ((schema.properties || {})[property] || {}).type
@@ -767,11 +759,12 @@
 				}
 			}.bind(this));
 			if (this.config.validation) {
+				code += classExpression + '.validationErrors = function (value, dataPath' + (this.config.assignment ? ', schemaMap' : '') + (this.config.linkAssignment ? ', linkMap' : '') + (this.config.trackMissing ? ', missing' : '') + ') {\n';
 				if (this.config.assignment) {
-					code += classExpression + '.validationErrors = function (value, dataPath, schemaMap' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
 					code += indent('schemaMap = schemaMap || {};\n');
-				} else {
-					code += classExpression + '.validationErrors = function (value, dataPath' + (this.config.trackMissing ? ', missing' : '') + ') {\n';
+				}
+				if (this.config.linkAssignment) {
+					code += indent('linkMap = linkMap || {};\n');
 				}
 				code += indent('dataPath = dataPath || "";\n');
 				code += indent('var errors = [];\n');
@@ -782,17 +775,17 @@
 				code += indent('return errors;\n');
 				code += '}\n';
 				code += classExpression + '.validate = function (value) {\n';
+				if (this.config.assignment) {
+					code += indent('var schemaMap = {};\n');
+				}
+				if (this.config.linkAssignment) {
+					code += indent('var linkMap = {};\n');
+				}
 				if (this.config.trackMissing) {
 					code += indent('var missing = {};\n');
 				}
-				if (this.config.assignment) {
-					code += indent('var schemaMap = {};\n');
-					code += indent('var errors = ' + classExpression + '.validationErrors(value, "", schemaMap' + (this.config.trackMissing ? ', missing' : '') + ');\n');
-					code += indent('return {valid: !errors.length, errors: errors, schemas: schemaMap' + (this.config.trackMissing ? ', missing: missing' : '') + '};\n');
-				} else {
-					code += indent('var errors = ' + classExpression + '.validationErrors(value, ""' + (this.config.trackMissing ? ', missing' : '') + ');\n');
-					code += indent('return {valid: !errors.length, errors: errors' + (this.config.trackMissing ? ', missing: missing' : '') + '};\n');
-				}
+				code += indent('var errors = ' + classExpression + '.validationErrors(value, ""' + (this.config.assignment ? ', schemaMap' : '') + (this.config.linkAssignment ? ', linkMap' : '') + (this.config.trackMissing ? ', missing' : '') + ');\n');
+				code += indent('return {valid: !errors.length, errors: errors' + (this.config.assignment ? ', schemas: schemaMap' : '') + (this.config.linkAssignment ? ', links: linkMap' : '') + (this.config.trackMissing ? ', missing: missing' : '') + '};\n');
 				code += '}\n';
 			}
 			return code;
@@ -816,11 +809,7 @@
 			if (useReference === true || (useReference !== false && (this.missing(schemaUrl) || this.schemaAcceptsType(schema, 'object')))) {
 				var classVar = this.classExprForUrl(schemaUrl);
 				requireUrl(schemaUrl);
-				if (this.config.assignment) {
-					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + ', schemaMap' + (this.config.trackMissing ? ', missing' : '') + ')');
-				} else {
-					return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + (this.config.trackMissing ? ', missing' : '') + ')');
-				}
+				return errorFunc(classVar + '.validationErrors(' + valueExpr + ', ' + dataPathExpr + (this.config.assignment ? ', schemaMap' : '') + (this.config.linkAssignment ? ', linkMap' : '') + (this.config.trackMissing ? ', missing' : '') + ')');
 			}
 
 			var validation = '';
@@ -839,6 +828,48 @@
 				validation += indent('schemaMap[' + dataPathExpr + '].push(' + schemaUrlExpr + ');\n');
 				validation += '}\n';
 			}
+			if (this.config.linkAssignment && Array.isArray(schema.links) && schema.links.length) {
+				var oldValidation = validation;
+				validation += 'linkMap[' + dataPathExpr + '] = (linkMap[' + dataPathExpr + '] || []).concat([\n';
+				validation += schema.links.map(function (ldo, index) {
+					var lines = [];
+					var template = ldo.href;
+					template = template.replace(/(\{[^\(\}]*)\$([^\}]*\})/g, function (match, firstPart, lastPart) {
+						return firstPart + '%73elf' + lastPart;
+					});
+					template = template.replace(/(\{[^\(\}]*)\((([^\)\}]|\)\))*)\)([^\)\}]*\})/g, function (match, firstPart, innerPart, innerPartLastChar, lastPart) {
+						if (!innerPart) return firstPart + '%65mpty' + lastPart;
+						return firstPart + encodeURIComponent(innerPart) + lastPart;
+					});
+					lines.push('href: ' + api.uriTemplate(function (property) {
+						if (property === '%73elf') {
+							return {
+								code: valueExpr,
+								type: schema.type
+							};
+						} else if (property === '%65mpty') {
+							return {
+								code: propertyExpression(valueExpr, ''),
+								type: ((schema.properties || {})[''] || {}).type
+							}
+						}
+						console.log(property);
+						property = decodeURIComponent(property);
+						return {
+							code: propertyExpression(valueExpr, property),
+							type: ((schema.properties || {})[property] || {}).type
+						};
+					}, template));
+					lines.push('rel: ' + JSON.stringify(ldo.rel));
+					if (ldo.schema) {
+						var subUrl = (ldo.schema.id) || this.extendUrl(schemaUrl, ['links', index, 'schema']);
+						lines.push('schema: ' + JSON.stringify(subUrl));
+					}
+					return indent('{\n' + lines.map(indent).join(',\n') + '\n}');
+				}.bind(this)).join(',\n');
+				validation += '\n]);\n';
+				console.log(validation.substring(oldValidation.length));
+			}
 
 			if (schema.allOf) {
 				schema.allOf.forEach(function (subSchema, index) {
@@ -851,10 +882,12 @@
 
 			if (schema.anyOf || schema.oneOf) {
 				if (this.config.assignment) {
-					validation += 'var actualSchemaMap = schemaMap, actualErrors = errors;\n'
-				} else {
-					validation += 'var actualErrors = errors;\n';
+					validation += 'var actualSchemaMap = schemaMap;\n';
 				}
+				if (this.config.linkAssignment) {
+					validation += 'var actualLinkMap = linkMap;\n';
+				}
+				validation += 'var actualErrors = errors;\n';
 				if (schema.anyOf) {
 					validation += 'var anyOfPassCount = 0;\n';
 					if (this.config.subErrors) {
@@ -865,6 +898,9 @@
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
+						if (this.config.linkAssignment) {
+							validation += 'linkMap = {};\n';
+						}
 						var subSchema = this.getFullSchema(subSchema);
 						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['anyOf', index]);
 						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc, true);
@@ -873,6 +909,11 @@
 						if (this.config.assignment) {
 							validation += indent('for (var key in schemaMap) {\n');
 							validation += indent(indent('actualSchemaMap[key] = (actualSchemaMap[key] || []).concat(schemaMap[key])\n'));
+							validation += indent('}\n');
+						}
+						if (this.config.linkAssignment) {
+							validation += indent('for (var key in linkMap) {\n');
+							validation += indent(indent('actualLinkMap[key] = (actualLinkMap[key] || []).concat(linkMap[key])\n'));
 							validation += indent('}\n');
 						}
 						validation += indent('anyOfPassCount++;\n');
@@ -892,6 +933,9 @@
 						if (this.config.assignment) {
 							validation += 'schemaMap = {};\n';
 						}
+						if (this.config.linkAssignment) {
+							validation += 'linkMap = {};\n';
+						}
 						var subSchema = this.getFullSchema(subSchema);
 						var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['oneOf', index]);
 						var checkCode = this.validationCode(valueExpr, dataPathExprs, subUrl, subSchema, requireUrl, errorFunc, true);
@@ -904,6 +948,14 @@
 							validation += indent(indent('}\n'));
 							validation += indent('}\n');
 						}
+						if (this.config.linkAssignment) {
+							validation += indent('if (!oneOfPassCount) {\n');
+							validation += indent(indent('for (var key in linkMap) {\n'));
+							validation += indent(indent(indent('actualLinkMap[key] = (actualLinkMap[key] || []).concat(linkMap[key])\n')));
+							validation += indent(indent('}\n'));
+							validation += indent('}\n');
+						}
+						
 						validation += indent('oneOfPassCount++;\n');
 						validation += '}\n';
 						if (this.config.subErrors) {
@@ -913,6 +965,9 @@
 				}
 				if (this.config.assignment) {
 					validation += 'schemaMap = actualSchemaMap;\n';
+				}
+				if (this.config.linkAssignment) {
+					validation += 'linkMap = actualLinkMap;\n';
 				}
 				validation += 'errors = actualErrors;\n';
 				if (schema.anyOf) {

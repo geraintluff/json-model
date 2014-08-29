@@ -364,7 +364,7 @@
 		} else {
 			this.dom = bindObj.dom;
 		}
-		this.bind = bindObj.bind;
+		//this.bind = bindObj.bind;
 		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
 			return !pointerPath;
 		};
@@ -637,6 +637,7 @@
 			if (value == null) value = '';
 			return (value + "").escapeHtml().replace(/;/g, ',');
 		},
+		/*
 		bindTo: function (element, bindings) {
 			if (element.boundDataModel === this) return this;
 			if (element.boundDataModel) {
@@ -680,7 +681,7 @@
 					if (!binding.shouldUpdate(pointerPath, thisModel)) return;
 				}
 				if (binding !== currentBinding || binding.dom) {
-					if (currentBinding && currentBinding.unbind) {
+					if (currentBinding) {
 						currentBinding.unbind(thisModel, element);
 					}
 				}
@@ -712,6 +713,7 @@
 			element.boundDataModel = null;
 			return this;
 		},
+		*/
 		html: function (tag, attrs) {
 			return BindingContext.placeholder(this, tag, attrs);
 		}
@@ -734,6 +736,7 @@
 				return true;
 			}
 		},
+		/*
 		bind: function (model, input) {
 			function updateModel() {
 				model.set(input.value);
@@ -758,6 +761,7 @@
 
 			updateInput();
 		}
+		*/
 	});
 	
 	return api;
