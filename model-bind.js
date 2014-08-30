@@ -33,35 +33,80 @@
 		return '</' + tagName + '>';
 	}
 	
-	function coerceDom(subject, target, cullSize) {
-		var old = subject.cloneNode(true);
+	var specialAttributes = {
+		'class': function (element, value) {
+			if (value === null) {
+				element.className = '';
+				element.removeAttribute('class');
+			} else {
+				element.setAttribute('class', element.className = value || '');
+			}
+		}
+	};
+	function setAttribute(element, key, value) {
+		if (specialAttributes[key]) return specialAttributes[key](element, value);
+		if (value == null) return element.removeAttribute(key);
+		element.setAttribute(key, value);
+	};
+	
+	function scanForChildBindings(element, callback) {
+		var pending = 1;
+		var error = null;
+		function donePending(e) {
+			error = error || e;
+			if (!--pending) callback(e);
+		}
 
-		cullSize = cullSize || 3;
-		var diff = diffDom(subject, target, cullSize);
-		executeDiffDom(subject, target, diff);
+		// TODO: better walk, not recursive
+		if (element.nodeType === 1) {
+			for (var i = 0; i < element.childNodes.length; i++) {
+				var child = element.childNodes[i];
+				if (child.nodeType === 1) {
+					if (child.hasAttribute(dataPropertyStoreKey)) {
+						pending++;
+						context._bindKeyPath(child, child.getAttribute(dataPropertyStoreKey), child.getAttribute(dataPropertyPath), donePending);
+					} else {
+						pending++;
+						scanForChildBindings(child, donePending);
+					}
+				}
+			}
+		}
+		donePending();
 	}
-	function executeDiffDom(subject, target, diff) {
+	function executeDiffDom(subject, target, diff, context, callback) {
+		if (target.nodeType === 1) {
+			// Assign all attributes
+			for (var i = 0; i < target.attributes.length; i++) {
+				var key = target.attributes[i].name, value = target.attributes[i].value;
+				if (subject.getAttribute(key) !== value) {
+					setAttribute(subject, key, value);
+				}
+			}
+			var subjectAttributes = [];
+			for (var i = 0; i < subject.attributes.length; i++) {
+				var key = subject.attributes[i].name;
+				subjectAttributes.push(key);
+			}
+			subjectAttributes.forEach(function (key) {
+				if (!target.hasAttribute(key)) {
+					setAttribute(subject, key, null);
+				}
+			});
+		}
+
+		var pending = 1;
+		var error = null;
+		function donePending(e) {
+			error = error || e;
+			if (!--pending) callback(e);
+		}
+
 		var path = diff.path;
 		if (!path) {
 			subject.nodeValue = target.nodeValue;
-			return;
+			return donePending(null);
 		}
-
-		// Assign all attributes
-		for (var i = 0; i < target.attributes.length; i++) {
-			var key = target.attributes[i].name, value = target.attributes[i].value;
-			subject.setAttribute(key, value);
-		}
-		var subjectAttributes = [];
-		for (var i = 0; i < subject.attributes.length; i++) {
-			var key = subject.attributes[i].name;
-			subjectAttributes.push(key);
-		}
-		subjectAttributes.forEach(function (key) {
-			if (!target.hasAttribute(key)) {
-				subject.removeAttribute(key);
-			}
-		});
 		
 		var subjectOffset = -1;
 		var targetOffset = -1;
@@ -72,7 +117,8 @@
 			if (lastSubjectIndex === null) {
 				var subjectChild = subject.childNodes[subjectIndex + subjectOffset];
 				var targetChild = target.childNodes[diagonal - subjectIndex + targetOffset];
-				executeDiffDom(subjectChild, targetChild, diff.actions[diagonal - 1]);
+				pending++;
+				executeDiffDom(subjectChild, targetChild, diff.actions[diagonal - 1], context, donePending);
 			} else if (lastSubjectIndex === subjectIndex) {
 				subjectOffset++;
 				var subjectChild = subject.childNodes[subjectIndex + subjectOffset];
@@ -86,12 +132,23 @@
 				subjectOffset--;
 			}
 		}
+		donePending();
 	}
-	function diffDom(subject, target, cullSize) {
+	function diffDom(subject, target, cullSize, ignoreFirstBinding) {
 		if (subject.nodeType !== target.nodeType) return;
 		if (subject.nodeType !== 1) return {score: 0.5};
 		if (subject.tagName !== target.tagName) return;
 		if (subject.tagName === 'input' && subject.type !== target.type) return;
+		
+		if (!ignoreFirstBinding && target.hasAttribute(dataPropertyStoreKey)) {
+			if (subject.getAttribute(dataPropertyStoreKey) === target.getAttribute(dataPropertyStoreKey) && subject.getAttribute(dataPropertyPath) === target.getAttribute(dataPropertyPath)) {
+				return {score: 1};
+			} else if (subject.hasAttribute(dataPropertyStoreKey)) {
+				return {score: 0.1};
+			} else {
+				return {score: 0.5};
+			}
+		}
 
 		// Score based on proportion of correct attributes
 		var attributesTotal = 1, attributesCorrect = 1;
@@ -158,268 +215,6 @@
 		var result = options[subjectCount];
 		return result;
 	}
-
-	/*
-	function Dom(tag, attrs, children) {
-		if (!(this instanceof Dom)) return new Dom(tag, attrs, children);
-		this.tag = tag;
-		this.attrs = attrs || {};
-		this.children = children || [];
-		if (!Array.isArray(this.children)) this.children = [this.children];
-		this.boundModel = null;
-	}
-	Dom.fromHtml = function (html, model) {
-		var parser = new DOMParser();
-		var doc = parser.parse(html, 'text/html');
-		var result = Dom.fromElement(container, model);
-		result.tag = null;
-		return result;
-	};
-	Dom.fromElement = function (element, model) {
-		var tag = element.tagName.toLowerCase();
-		var attrs = {};
-		var bindModel = null;
-		for (var i = 0; i < element.attributes.length; i++) {
-			var attribute = element.attributes[i];
-			var key = attribute.name, value = attribute.value;
-			if (key === 'data-path') {
-				bindModel = model.path(value);
-				continue;
-			}
-			attrs[key] = value;
-		}
-		var dom = new Dom(tag, attrs);
-		if (bindModel) {
-			dom.bind(bindModel);
-			return dom;
-		}
-		for (var i = 0; i < element.childNodes.length; i++) {
-			var child = element.childNodes[i];
-			if (child.nodeType === 3) {
-				dom.children.push(child.nodeValue);
-			} else if (child.nodeType === 1) {
-				dom.children.push(Dom.fromElement(child, model));
-			}
-		}
-		return dom;
-	};
-	var specialAttributes = {
-		'class': function (element, value) {
-			element.setAttribute('class', element.className = value || '');
-		}
-	}
-	Dom.setAttribute = function (element, key, value) {
-		if (specialAttributes[key]) return specialAttributes[key](element, value);
-		if (value == null) return element.removeAttribute(key);
-		element.setAttribute(key, value);
-	};
-	Dom.prototype = {
-		child: function (tag, attrs, content) {
-			var child = new Dom(tag, attrs, content);
-			this.children.push(child);
-			return child;
-		},
-		getAttr: function (key) {
-			var value = this.attrs[key];
-			if (typeof value === 'function') value = value();
-			if (api.is(value)) {
-				value = value.get();
-			}
-			return value;
-		},
-		getChildHtml: function (index) {
-			var value = this.children[index];
-			if (typeof value === 'function') value = value();
-			if (value instanceof Dom) {
-				return value.html();
-			}
-			if (api.is(value)) return value.html();
-			return (value + "").escapeHtml();
-		},
-		innerHtml: function () {
-			var html = '';
-			for (var i = 0; i < this.children.length; i++) {
-				html += this.getChildHtml(i);
-			}
-			return html;
-		},
-		html: function (defaultTag) {
-			var tag = this.tag || defaultTag || 'span';
-			var html = openTag(tag, this.attrs);
-			html += this.innerHtml();
-			html += closeTag(tag);
-			return html;
-		},
-		matchChild: function (index, element) {
-			var value = this.children[index];
-			if (typeof value === 'function') value = value();
-			if (value instanceof Dom) {
-				return value.match(element);
-			}
-			if (element.nodeType === 3) {
-				// All text fields match text values
-				return {score: 1, match: 'text'};
-			}
-			return {score: -1, match:[undefined]};
-		},
-		match: function (element) {
-			if (!element.tagName || (this.tag && this.tag.toLowerCase() !== element.tagName.toLowerCase())) {
-				return {score: 0};
-			}
-			var attrCount = Object.keys(this.attrs).length, attrsMatched = 0;
-			for (var key in this.attrs) {
-				var value = this.getAttr(key);
-				if (value === false || value == null) {
-					if (!element.hasAttribute(key)) {
-						attrsMatched++;
-					}
-				} else {
-					var elementValue = element.getAttribute(key);
-					if (elementValue === value.toString()) {
-						attrsMatched++;
-					}
-				}
-			}
-			var attrMatch = (attrsMatched + 1)/(attrCount + 1);
-			// Viterbi path through merge
-			var options = {}, mergeThreshhold = 0.3;
-			options['0-0'] = {score: attrMatch, match:[]};
-			var modelChildCount = this.children.length, elementChildCount = element.childNodes.length;;
-			var diagonalMax = modelChildCount + elementChildCount;
-			for (var diagonal = 1; diagonal <= diagonalMax; diagonal++) {
-				for (var childPos = 0; childPos <= elementChildCount && childPos <= diagonal; childPos++) {
-					if (diagonal - childPos > modelChildCount) continue;
-					var key = diagonal + '-' + childPos;
-					var keyModelAdd = (diagonal - 1) + '-' + childPos;
-					var keyElementRemove = (diagonal - 1) + '-' + (childPos - 1);
-					var keyMatch = (diagonal - 2) + '-' + (childPos - 1);
-
-					var bestOption = null, bestScore = -diagonalMax;
-					if (options[keyModelAdd]) {
-						if (options[keyModelAdd].score > bestScore) {
-							bestOption = {
-								score: options[keyModelAdd].score,
-								match: options[keyModelAdd].match.concat([{
-									action: 'add',
-									model: diagonal - childPos - 1,
-									element: childPos - 1
-								}])
-							};
-							bestScore = bestOption.score;
-						}
-					}
-					if (options[keyElementRemove]) {
-						if (options[keyElementRemove].score > bestScore) {
-							bestOption = {
-								score: options[keyElementRemove].score,
-								match: options[keyElementRemove].match.concat([{
-									action: 'remove',
-									element: childPos - 1
-								}])
-							};
-							bestScore = bestOption.score;
-						}
-					}
-					if (options[keyMatch]) {
-						var subMatch = this.matchChild(diagonal - childPos - 1, element.childNodes[childPos - 1]);
-						var possibleScore = options[keyMatch].score + subMatch.score - mergeThreshhold;
-						if (possibleScore > bestScore) {
-							bestOption = {
-								score: possibleScore,
-								match: options[keyMatch].match.concat([{
-									action: 'merge',
-									model: diagonal - childPos - 1,
-									element: childPos - 1,
-									match: subMatch.match
-								}])
-							};
-							bestScore = possibleScore;
-						}
-					}
-					if (bestOption) {
-						options[key] = bestOption;
-					}
-				}
-			}
-			var finalKey = diagonalMax + '-' + elementChildCount;
-			var finalOption = options[finalKey];
-			var maxPossibleScore = 1 + Math.min(modelChildCount, elementChildCount)*(1 - mergeThreshhold);
-			return {
-				score: finalOption.score/maxPossibleScore,
-				match: finalOption.match
-			};
-		},
-		coerce: function (element, dataModel, merge) {
-			if (!merge) {
-				var match = this.match(element);
-				if (!match.score) throw new Error('Cannot coerce un-matching element');
-				merge = match.match;
-			}
-			// Coerce keys
-			for (var key in this.attrs) {
-				var value = this.getAttr(key);
-				if (value === false || value == null) {
-					element.removeAttribute(key);
-				} else {
-					value = value.toString();
-					var elementValue = element.getAttribute(key);
-					if (elementValue !== value) {
-						Dom.setAttribute(element, key, value);
-					}
-				}
-			}
-			var childOffset = 0;
-			for (var i = 0; i < merge.length; i++) {
-				var step = merge[i];
-				if (step.action === 'remove') {
-					var child = element.childNodes[childOffset + step.element];
-					element.removeChild(child);
-					childOffset--;
-				} else if (step.action === 'add') {
-					var container = document.createElement('div');
-					container.innerHTML = this.getChildHtml(step.model);
-					var contents = container.childNodes[Math.floor(container.childNodes.length/2)];
-					contents = contents || document.createTextNode('');
-					element.insertBefore(contents, element.childNodes[childOffset + step.element + 1]);
-					childOffset++;
-					if (this.children[step.model] instanceof Dom) this.children[step.model].bindToElement(contents, dataModel);
-				} else if (step.match === 'text') {
-					var html = this.getChildHtml(step.model);
-					var child = element.childNodes[step.element];
-					if ('innerHTML' in child) {
-						child.innerHTML = html;
-					} else {
-						var container = document.createElement('div');
-						container.innerHTML = html;
-						var contents = container.childNodes[Math.floor(container.childNodes.length/2)];
-						contents = contents || document.createTextNode('');
-						child.nodeValue = contents.nodeValue;
-					}
-				} else {
-					var child = this.children[step.model];
-					child.coerce(element.childNodes[childOffset + step.element], dataModel, step.match);
-				}
-			}
-			this.bindToElement(element, dataModel);
-		},
-		bindToElement: function (element, model) {
-			var bindingModel = this.boundModel;
-			if (typeof bindingModel === 'string' || typeof bindingModel === 'number') {
-				bindingModel = model.path(bindingModel);
-			}
-			if (bindingModel && element.boundDataModel !== bindingModel) {
-				if (element.boundDataModel) {
-					element.boundapi.unbindFrom(element);
-				}
-				bindingModel.bindTo(element);
-			}
-		},
-		bind: function (model) {
-			this.boundModel = model;
-		}
-	};
-	api.Dom = Dom;
-	*/
 	
 	function Binding(bindObj, registerIndex) {
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
@@ -473,40 +268,15 @@
 
 		if (typeof bindObj.html === 'function') {
 			this.html = bindObj.html.bind(bindObj);
-			/*
-			this.dom = function (model, tagName, attrs) {
-				return Dom.fromHtml(bindObj.html(model, tagName, attrs), model);
-			}
-			*/
 		} else if (typeof bindObj.html === 'string') {
 			this.html = function () {return bindObj.html;};
-			/*
-			var dom = Dom.fromHtml(bindObj.html);
-			this.dom = function () {return dom;};
-		
-		} else if (bindObj.dom instanceof Dom) {
-			this.dom = function () {return bindObj.dom;};
-		} else {
-			this.dom = bindObj.dom;
-			*/
 		}
-		//this.bind = bindObj.bind;
 		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
 			return !pointerPath;
 		};
 	}
 	Binding.prototype = {
-		/*
-		html: function (model, tagName, attrs) {
-			var dom = this.dom(model, tagName, attrs);
-			return dom.innerHtml();
-		}
-		*/
 	};
-	
-	var placeholderStart = Math.random().toString().substring(2);
-	var placeholderEnd = Math.random().toString().substring(2);
-	var placeholderRegExp = new RegExp(placeholderStart + '(.+?)' + placeholderEnd);
 	
 	function Bindings(parent) {
 		this._state = 0; // Increment every time something happens, so children know to re-concatenate
@@ -660,6 +430,9 @@
 		this._dataStore = dataStore;
 	}
 	BindingContext.prototype = {
+		selectBinding: function (model, tag, attrs) {
+			return this._bindings.select(model, tag, attrs);
+		},
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
 		},
@@ -669,7 +442,7 @@
 			attrs = attrs || {};
 
 			var result = function () {
-				var binding = thisContext._bindings.select(model, tag, attrs);
+				var binding = thisContext.selectBinding(model, tag, attrs);
 				
 				var immediateHtml = binding.html(model, tag, attrs, function (error, html) {
 					if (error) return callback(error, html);
@@ -698,6 +471,8 @@
 				} catch (e) {
 					return callback(e);
 				}
+				data.tag = data.tag || 'span';
+				data.attrs = data.attrs || {};
 				var rootModel = thisContext._dataStore._getRootModel(data.key);
 				if (!rootModel) {
 					var error = new Error('Missing from data store: ' + data.key);
@@ -719,45 +494,78 @@
 				var attribute = hostElement.attributes[i];
 				attrs[attribute.name] = attribute.value;
 			}
-
-			model.whenReady(function () {
-				var binding = thisContext._bindings.select(model, tag, attrs);
-				
-				function processHtml(error, innerHtml) {
-					innerHtml = innerHtml.replace(magicRegex, function (match, data) {
-						try {
-							data = JSON.parse(data);
-						} catch (e) {
-							error = error || e;
-							return thisContext.errorHtml(e);
-						}
-						data.attrs = data.attrs || {};
-						data.attrs[dataPropertyStoreKey] = data.key;
-						data.attrs[dataPropertyPath];
-						return openTag(data.tag, data.attrs) + closeTag(data.tag);
-					});
-					hostElement.innerHTML = innerHtml;
-
-					callback(error, hostElement);
-				}
-				
+			
+			function render() {
+				var binding = thisContext.selectBinding(model, tag, attrs);
 				var innerHtml = binding.html(model, tag, attrs, processHtml);
 				if (typeof innerHtml === 'string') {
 					processHtml(null, innerHtml);
 				}
+			}
+
+			function processHtml(error, innerHtml) {
+				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+					try {
+						data = JSON.parse(data);
+					} catch (e) {
+						error = error || e;
+						return thisContext.errorHtml(e);
+					}
+					data.tag = data.tag || 'span';
+					data.attrs = data.attrs || {};
+					data.attrs[dataPropertyStoreKey] = data.key;
+					data.attrs[dataPropertyPath] = data.path;
+					return openTag(data.tag, data.attrs) + closeTag(data.tag);
+				});
+				hostElement.innerHTML = innerHtml;
+				
+				thisContext._coerceDom(element, hostElement, null, function (err) {
+					if (callback) callback(error || err);
+				});
+			}
+			
+			model.whenReady(render);
+		},
+		_coerceDom: function coerceDom(subject, target, cullSize, callback) {
+			cullSize = cullSize || 3;
+			var diff = diffDom(subject, target, cullSize, true);
+			console.log('coercing', subject, 'to', target, diff);
+			executeDiffDom(subject, target, diff, this, function (error) {
+				console.log('DOM diff completed');
+				scanForChildBindings(subject, function (err) {
+					console.log('DOM bindings completed');
+					callback(error || err);
+				});
 			});
 		},
+		_bindKeyPath: function (element, storeKey, path, callback) {
+			var existing = element.boundDataModel;
+			var rootModel = context._dataStore._getRootModel(storeKey);
+			if (!rootModel) {
+				if (existing && existing._root.storeKey === storeKey && existing._path === path) {
+					rootModel = existing._root;
+				} else {
+					return callback(new Error('Model missing during bind sweep: ' + storeKey));
+				}
+			}
+			var model = rootModel.modelForPath(path);
+			this.bind(model, element, callback);
+		},
 		bind: function (model, element, callback) {
+			if (model === element.boundJsonModel) {
+				console.log('Already bound', element, model.url());
+				return asap(callback);
+			}
+			console.log('Binding', element, model.url());
+			var thisContext = this;
 			if (!api.is(model)) {
 				model = this.dataStore.open(model);
 			}
 			if (typeof element === 'string') {
 				element = document.getElementById('string');
 			}
-			this._renderDom(model, element, function (error, dom) {
-				if (dom) coerceDom(element, dom);
-				if (callback) callback(error);
-			});
+			element.boundJsonModel = model;
+			this._renderDom(model, element, callback);
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {
