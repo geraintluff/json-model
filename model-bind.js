@@ -1,3 +1,4 @@
+"use strict";
 (function (global, factory) {
 	if (typeof define === 'function' && define.amd) {
 		// AMD. Register as an anonymous module.
@@ -17,7 +18,7 @@
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
 		for (var key in attrs) {
-			value = attrs[key];
+			var value = attrs[key];
 			if (typeof value === 'function') value = value();
 			if (api.is(value)) value = value.get();
 			if (value === '' || value === true) {
@@ -49,7 +50,7 @@
 		element.setAttribute(key, value);
 	};
 	
-	function scanForChildBindings(element, callback) {
+	function scanForChildBindings(element, context, callback) {
 		var pending = 1;
 		var error = null;
 		function donePending(e) {
@@ -67,7 +68,7 @@
 						context._bindKeyPath(child, child.getAttribute(dataPropertyStoreKey), child.getAttribute(dataPropertyPath), donePending);
 					} else {
 						pending++;
-						scanForChildBindings(child, donePending);
+						scanForChildBindings(child, context, donePending);
 					}
 				}
 			}
@@ -320,12 +321,12 @@
 			this._parentState = null; // Trigger re-concatenate on next options() call
 			return this;
 		},
-		select: function (model, tagName, attrs) {
+		select: function (model, tagName, attrs, bannedBindings) {
 			var options = this._options();
 			var schemas = model.schemas();
 			for (var i = 0; i < options.length ; i++) {
 				var binding = options[i];
-				if (binding.canBind(model, tagName, attrs)) {
+				if (binding.canBind(model, tagName, attrs) && bannedBindings.indexOf(binding) === -1) {
 					return binding;
 				}
 			}
@@ -333,7 +334,7 @@
 	};
 	if (typeof require === 'function' && typeof module !== 'undefined') {
 		Bindings.prototype.includeDir = function (dirname) {
-			thisBindings = this;
+			var thisBindings = this;
 			try {
 				var items = require('fs').readdirSync(dirname);
 			} catch (e) {
@@ -428,10 +429,27 @@
 	function BindingContext(bindings, dataStore) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
+		// Sub-binding stuff
+		this._root = this;
+		this._model = null;
+		this._usedBindings = [];
 	}
 	BindingContext.prototype = {
+		_subContext: function (model, binding) {
+			var result = Object.create(this._root);
+			result._model = model;
+			result._usedBindings = [binding];
+			if (this._model === model) {
+				result._usedBindings = this._usedBindings.concat(result._usedBindings);
+			}
+			return result;
+		},
 		selectBinding: function (model, tag, attrs) {
-			return this._bindings.select(model, tag, attrs);
+			if (model === this._model) {
+				return this._bindings.select(model, tag, attrs, this._usedBindings);
+			} else {
+				return this._bindings.select(model, tag, attrs, []);
+			}
 		},
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
@@ -443,6 +461,7 @@
 
 			var result = function () {
 				var binding = thisContext.selectBinding(model, tag, attrs);
+				var context = thisContext._subContext(model, binding);
 				
 				var immediateHtml = binding.html(model, tag, attrs, function (error, html) {
 					if (error) return callback(error, html);
@@ -450,11 +469,11 @@
 						throw new Error('Renderer must either return HTML string or call the callback, but not both');
 					}
 					html = openTag(tag, attrs) + html + closeTag(tag);
-					thisContext.expandHtml(html, callback);
+					context.expandHtml(html, callback);
 				});
 				if (typeof immediateHtml === 'string') {
 					var html = openTag(tag, attrs) + immediateHtml + closeTag(tag);
-					thisContext.expandHtml(html, callback);
+					context.expandHtml(html, callback);
 				}
 			};
 			if (model.ready()) {
@@ -486,53 +505,63 @@
 		_renderDom: function (model, element, callback) {
 			var thisContext = this;
 			
-			var hostElement = element.cloneNode(false);
-
-			var tag = hostElement.tagName.toLowerCase();
+			var tag = element.tagName.toLowerCase();
 			var attrs = {};
-			for (var i = 0; i < hostElement.attributes.length; i++) {
-				var attribute = hostElement.attributes[i];
+			for (var i = 0; i < element.attributes.length; i++) {
+				var attribute = element.attributes[i];
 				attrs[attribute.name] = attribute.value;
 			}
 			
-			function render() {
+			model.whenReady(function () {
 				var binding = thisContext.selectBinding(model, tag, attrs);
+				var context = thisContext._subContext(model, binding);
+
+				if (model === element.boundJsonModel) {
+					console.log('Already bound', element, model.url());
+					throw new Error('already bound');
+				}
+				element.boundJsonModel = model;
+
+				function processHtml(error, innerHtml) {
+					innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+						try {
+							data = JSON.parse(data);
+						} catch (e) {
+							error = error || e;
+							return context.errorHtml(e);
+						}
+						data.tag = data.tag || 'span';
+						data.attrs = data.attrs || {};
+						data.attrs[dataPropertyStoreKey] = data.key;
+						data.attrs[dataPropertyPath] = data.path;
+						return openTag(data.tag, data.attrs) + closeTag(data.tag);
+					});
+					// DEBUG
+					if (tag !== 'html' && tag !== 'body') {
+						innerHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used</span>' + innerHtml;
+					}
+					
+					var hostElement = element.cloneNode(false);
+					hostElement.innerHTML = innerHtml;
+					context._coerceDom(element, hostElement, null, function (err) {
+						if (callback) callback(error || err);
+					});
+				}
+
 				var innerHtml = binding.html(model, tag, attrs, processHtml);
 				if (typeof innerHtml === 'string') {
 					processHtml(null, innerHtml);
 				}
-			}
-
-			function processHtml(error, innerHtml) {
-				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
-					try {
-						data = JSON.parse(data);
-					} catch (e) {
-						error = error || e;
-						return thisContext.errorHtml(e);
-					}
-					data.tag = data.tag || 'span';
-					data.attrs = data.attrs || {};
-					data.attrs[dataPropertyStoreKey] = data.key;
-					data.attrs[dataPropertyPath] = data.path;
-					return openTag(data.tag, data.attrs) + closeTag(data.tag);
-				});
-				hostElement.innerHTML = innerHtml;
-				
-				thisContext._coerceDom(element, hostElement, null, function (err) {
-					if (callback) callback(error || err);
-				});
-			}
-			
-			model.whenReady(render);
+			});
 		},
 		_coerceDom: function coerceDom(subject, target, cullSize, callback) {
+			var thisContext = this;
 			cullSize = cullSize || 3;
 			var diff = diffDom(subject, target, cullSize, true);
 			console.log('coercing', subject, 'to', target, diff);
 			executeDiffDom(subject, target, diff, this, function (error) {
 				console.log('DOM diff completed');
-				scanForChildBindings(subject, function (err) {
+				scanForChildBindings(subject, thisContext, function (err) {
 					console.log('DOM bindings completed');
 					callback(error || err);
 				});
@@ -540,7 +569,7 @@
 		},
 		_bindKeyPath: function (element, storeKey, path, callback) {
 			var existing = element.boundDataModel;
-			var rootModel = context._dataStore._getRootModel(storeKey);
+			var rootModel = this._dataStore._getRootModel(storeKey);
 			if (!rootModel) {
 				if (existing && existing._root.storeKey === storeKey && existing._path === path) {
 					rootModel = existing._root;
@@ -552,10 +581,6 @@
 			this.bind(model, element, callback);
 		},
 		bind: function (model, element, callback) {
-			if (model === element.boundJsonModel) {
-				console.log('Already bound', element, model.url());
-				return asap(callback);
-			}
 			console.log('Binding', element, model.url());
 			var thisContext = this;
 			if (!api.is(model)) {
@@ -564,7 +589,7 @@
 			if (typeof element === 'string') {
 				element = document.getElementById('string');
 			}
-			element.boundJsonModel = model;
+
 			this._renderDom(model, element, callback);
 		}
 	};
