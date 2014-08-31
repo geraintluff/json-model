@@ -68,6 +68,7 @@
 						context._bindKeyPath(child, child.getAttribute(dataPropertyStoreKey), child.getAttribute(dataPropertyPath), donePending);
 					} else {
 						pending++;
+						context.unbind(child);
 						scanForChildBindings(child, context, donePending);
 					}
 				}
@@ -516,11 +517,18 @@
 				var binding = thisContext.selectBinding(model, tag, attrs);
 				var context = thisContext._subContext(model, binding);
 
-				if (model === element.boundJsonModel) {
-					console.log('Already bound', element, model.url());
-					throw new Error('already bound');
+				if (element.boundJsonModel) {
+					if (model === element.boundJsonModel) {
+						console.log('Already bound', element, model.url());
+						throw new Error('already bound to the same model');
+					} else {
+						throw new Error('already bound to another model');
+						thisContext.unbind(element);
+					}
 				}
 				element.boundJsonModel = model;
+				element.boundBinding = binding;
+				element.boundContext = context;
 
 				function processHtml(error, innerHtml) {
 					innerHtml = innerHtml.replace(magicRegex, function (match, data) {
@@ -568,14 +576,9 @@
 			});
 		},
 		_bindKeyPath: function (element, storeKey, path, callback) {
-			var existing = element.boundDataModel;
 			var rootModel = this._dataStore._getRootModel(storeKey);
 			if (!rootModel) {
-				if (existing && existing._root.storeKey === storeKey && existing._path === path) {
-					rootModel = existing._root;
-				} else {
-					return callback(new Error('Model missing during bind sweep: ' + storeKey));
-				}
+				return callback(new Error('Model missing during bind sweep: ' + storeKey));
 			}
 			var model = rootModel.modelForPath(path);
 			this.bind(model, element, callback);
@@ -591,6 +594,14 @@
 			}
 
 			this._renderDom(model, element, callback);
+		},
+		unbind: function (element) {
+			if (element.boundJsonModel) {
+				delete element.boundJsonModel;
+				delete element.boundBinding;
+				delete element.boundContext;
+				throw new Error('Unbinding not supported yet');
+			}
 		}
 	};
 	BindingContext.placeholder = function (model, tag, attrs) {
