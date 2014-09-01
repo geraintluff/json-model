@@ -50,7 +50,7 @@ describe('Model events', function () {
 	});
 
 	it('triggers schema change', function () {
-		var schemaUrl = '/schemas/test' + Math.random();
+		var schemaUrl = 'http://example.com/schemas/test' + Math.random();
 		api.schemaStore.add(schemaUrl, {
 			oneOf: [
 				{

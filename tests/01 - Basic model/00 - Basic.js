@@ -39,7 +39,7 @@ describe('Basic model', function () {
 	});
 	
 	it('schemas and links', function () {
-		var schemaUrl = '/schemas/test' + Math.random();
+		var schemaUrl = 'http://example.com/schemas/test' + Math.random();
 		api.schemaStore.add(schemaUrl, {
 			type: 'object', 
 			properties: {
@@ -73,8 +73,8 @@ describe('Basic model', function () {
 	});
 
 	it('missing schema', function (done) {
-		var schemaUrl = '/schemas/test' + Math.random();
-		var schemaUrl2 = '/schemas/test' + Math.random();
+		var schemaUrl = 'http://example.com/schemas/test' + Math.random();
+		var schemaUrl2 = 'http://example.com/schemas/test' + Math.random();
 		var requestParams = [];
 		api.setRequestFunction(function (params, callback) {
 			assert.deepEqual(params.url, schemaUrl, 'request correct URL');
