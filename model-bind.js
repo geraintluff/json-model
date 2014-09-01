@@ -588,7 +588,6 @@
 
 				if (element.boundJsonModel) {
 					if (model === element.boundJsonModel) {
-						console.log('Already bound', element, model.url());
 						throw new Error('already bound to the same model');
 					} else {
 						throw new Error('already bound to another model');
@@ -606,11 +605,8 @@
 			var thisContext = this;
 			cullSize = cullSize || 3;
 			var diff = diffDom(subject, target, cullSize, true);
-			console.log('coercing', subject, 'to', target, diff);
 			executeDiffDom(subject, target, diff, this, function (error) {
-				console.log('DOM diff completed');
 				scanForChildBindings(subject, thisContext, function (err) {
-					console.log('DOM bindings completed');
 					callback(error || err);
 				});
 			});
@@ -624,7 +620,6 @@
 			this.bind(model, element, callback);
 		},
 		bind: function (model, element, callback) {
-			console.log('Binding', element, model.url());
 			var thisContext = this;
 			if (!api.is(model)) {
 				model = this.dataStore.open(model);
