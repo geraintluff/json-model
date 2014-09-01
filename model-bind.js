@@ -14,6 +14,14 @@
 
 	var asap = api.util.timer.asap;
 	var resolveUrl = api.util.resolveUrl;
+
+	function isAttached(element) {
+		var e = element;
+		while (e.parentNode) {
+			e = e.parentNode;
+		}
+		return e === element.ownerDocument;
+	}
 	
 	function openTag(tagName, attrs) {
 		var html = '<' + tagName;
@@ -65,7 +73,7 @@
 				if (child.nodeType === 1) {
 					if (child.hasAttribute(dataPropertyStoreKey)) {
 						pending++;
-						context._bindKeyPath(child, child.getAttribute(dataPropertyStoreKey), child.getAttribute(dataPropertyPath), donePending);
+						context._bindKeyPath(child, child.getAttribute(dataPropertyStoreKey), child.getAttribute(dataPropertyPath), child.getAttribute(dataPropertyUiPath), donePending);
 					} else {
 						pending++;
 						context.unbind(child);
@@ -143,7 +151,7 @@
 		if (subject.tagName === 'input' && subject.type !== target.type) return;
 		
 		if (!ignoreFirstBinding && target.hasAttribute(dataPropertyStoreKey)) {
-			if (subject.getAttribute(dataPropertyStoreKey) === target.getAttribute(dataPropertyStoreKey) && subject.getAttribute(dataPropertyPath) === target.getAttribute(dataPropertyPath)) {
+			if (subject.getAttribute(dataPropertyStoreKey) === target.getAttribute(dataPropertyStoreKey) && subject.getAttribute(dataPropertyPath) === target.getAttribute(dataPropertyPath) && subject.getAttribute(dataPropertyUiPath) === target.getAttribute(dataPropertyUiPath)) {
 				return {score: 1};
 			} else if (subject.hasAttribute(dataPropertyStoreKey)) {
 				return {score: 0.1};
@@ -276,36 +284,69 @@
 		}
 		
 		var modelEvents = bindObj.modelEvents || {};
-		modelEvents.change = modelEvents.change || function (model, element, pointerPath) {
+		modelEvents.change = modelEvents.change || function (model, element, ui, pointerPath) {
 			return !pointerPath;
 		};
-
+		var uiEvents = bindObj.uiEvents || {};
+		uiEvents.change = uiEvents.change || function (model, element, ui, pointerPath) {
+			return pointerPath.split('/').length <= 2;
+		};
+		
 		this.bindDom = function (context, model, element) {
-			var handlers = context.boundJsonModelEvents = {};
+			setInterval(function () {
+				if (!isAttached(element)) {
+					console.log('Detached from document: ', element);
+				}
+			}, 1000);
+
+			var modelHandlers = context.boundJsonModelEvents = {};
 			Object.keys(modelEvents).forEach(function (key) {
 				var original = modelEvents[key];
-				var handler = handlers[key] = function () {
+				var handler = modelHandlers[key] = function () {
 					if (element.boundContext !== context) {
 						return thisBinding.unbindDom(context, model, element);
 					}
 					
 					var args = Array.prototype.slice.call(arguments, 0);
-					args = [model, element].concat(args);
+					args = [model, element, context.ui].concat(args);
 					var shouldRender = original.apply(this, args);
 					if (shouldRender) {
-						throw new Error('Re-rendering not supported yet');
+						context.bind(model, element);
 					}
 				};
 				model.on(key, handler);
 			});
+			var uiHandlers = context.boundUiEvents = {};
+			Object.keys(uiEvents).forEach(function (key) {
+				var original = uiEvents[key];
+				var handler = uiHandlers[key] = function () {
+					if (element.boundContext !== context) {
+						return thisBinding.unbindDom(context, model, element);
+					}
+					
+					var args = Array.prototype.slice.call(arguments, 0);
+					args = [model, element, context.ui].concat(args);
+					var shouldRender = original.apply(this, args);
+					if (shouldRender) {
+						context.bind(model, element);
+					}
+				};
+				context.ui.on(key, handler);
+			});
 			
 			model.emit('bind', element);
+			context.ui.emit('bind', model, element);
 		};
 		this.unbindDom = function (context, model, element) {
 			model.emit('unbind', element);
 
 			for (var key in context.boundJsonModelEvents) {
+				var handler = context.boundJsonModelEvents[key];
 				model.off(key, handler);
+			}
+			for (var key in context.boundUiEvents) {
+				var handler = context.boundUiEvents[key];
+				context.ui.off(key, handler);
 			}
 		};
 	}
@@ -459,6 +500,7 @@
 	var magicRegex = /<JM--(.*?)-->/g;
 	var dataPropertyStoreKey = 'data-JMstoreKey';
 	var dataPropertyPath = 'data-JMpath';
+	var dataPropertyUiPath = 'data-JMuipath';
 	function BindingContext(bindings, dataStore) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
@@ -466,15 +508,17 @@
 		this._root = this;
 		this._model = null;
 		this._usedBindings = [];
+		this.ui = api.create({});
 	}
 	BindingContext.prototype = {
-		_subContext: function (model, binding) {
+		_subContext: function (model, binding, uiPath) {
 			var result = Object.create(this._root);
 			result._model = model;
 			result._usedBindings = [binding];
 			if (this._model === model) {
 				result._usedBindings = this._usedBindings.concat(result._usedBindings);
 			}
+			result.ui = (typeof uiPath === 'string') ? this.ui.path(uiPath) : this.ui;
 			return result;
 		},
 		selectBinding: function (model, tag, attrs) {
@@ -487,16 +531,16 @@
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
 		},
-		_renderHtml: function (model, tag, attrs, callback) {
+		_renderHtml: function (model, tag, attrs, uiPath, callback) {
 			var thisContext = this;
 			tag = tag || 'span';
 			attrs = attrs || {};
 
 			var result = function () {
 				var binding = thisContext.selectBinding(model, tag, attrs);
-				var context = thisContext._subContext(model, binding);
+				var context = thisContext._subContext(model, binding, uiPath);
 				
-				var immediateHtml = binding.html(model, tag, attrs, function (error, html) {
+				var immediateHtml = binding.html(model, tag, attrs, thisContext.ui, function (error, html) {
 					if (error) return callback(error, html);
 					if (typeof immediateHtml === 'string') {
 						throw new Error('Renderer must either return HTML string or call the callback, but not both');
@@ -525,6 +569,7 @@
 				}
 				data.tag = data.tag || 'span';
 				data.attrs = data.attrs || {};
+				data.ui = data.ui || '';
 				var rootModel = thisContext._dataStore._getRootModel(data.key);
 				if (!rootModel) {
 					var error = new Error('Missing from data store: ' + data.key);
@@ -532,7 +577,7 @@
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				thisContext._renderHtml(model, data.tag, data.attrs, callback);
+				thisContext._renderHtml(model, data.tag, data.attrs, data.ui, callback);
 			}, callback);
 		},
 		_updateDom: function (element, tag, attrs, callback) {
@@ -540,7 +585,7 @@
 			var binding = element.boundBinding;
 			var context = element.boundContext;
 
-			var innerHtml = binding.html(model, tag, attrs, processHtml);
+			var innerHtml = binding.html(model, tag, attrs, this.ui, processHtml);
 			if (typeof innerHtml === 'string') {
 				processHtml(null, innerHtml);
 			}
@@ -557,6 +602,7 @@
 					data.attrs = data.attrs || {};
 					data.attrs[dataPropertyStoreKey] = data.key;
 					data.attrs[dataPropertyPath] = data.path;
+					data.attrs[dataPropertyUiPath] = data.ui;
 					return openTag(data.tag, data.attrs) + closeTag(data.tag);
 				});
 				// DEBUG
@@ -567,13 +613,19 @@
 				var hostElement = element.cloneNode(false);
 				hostElement.innerHTML = innerHtml;
 				context._coerceDom(element, hostElement, null, function (err) {
-					binding.bindDom(context, model, element);
-					if (callback) callback(error || err);
+					callback(error || err);
 				});
 			}
 		},
-		_renderDom: function (model, element, callback) {
+		_renderDom: function (model, element, uiPath, callback) {
 			var thisContext = this;
+			
+			if (!isAttached(element)) {
+				console.log('Not attached to document:', element);
+				asap(function () {
+					callback(new Error('Not attached to document'));
+				})
+			}
 			
 			var tag = element.tagName.toLowerCase();
 			var attrs = {};
@@ -584,13 +636,12 @@
 			
 			model.whenReady(function () {
 				var binding = thisContext.selectBinding(model, tag, attrs);
-				var context = thisContext._subContext(model, binding);
+				var context = thisContext._subContext(model, binding, uiPath);
 
 				if (element.boundJsonModel) {
 					if (model === element.boundJsonModel) {
-						throw new Error('already bound to the same model');
+						return thisContext._updateDom(element, tag, attrs, callback);
 					} else {
-						throw new Error('already bound to another model');
 						thisContext.unbind(element);
 					}
 				}
@@ -598,7 +649,10 @@
 				element.boundBinding = binding;
 				element.boundContext = context;
 				
-				thisContext._updateDom(element, tag, attrs, callback);
+				thisContext._updateDom(element, tag, attrs, function (error) {
+					binding.bindDom(context, model, element);
+					return callback(error);
+				});
 			});
 		},
 		_coerceDom: function coerceDom(subject, target, cullSize, callback) {
@@ -611,24 +665,30 @@
 				});
 			});
 		},
-		_bindKeyPath: function (element, storeKey, path, callback) {
+		_bindKeyPath: function (element, storeKey, path, uiPath, callback) {
 			var rootModel = this._dataStore._getRootModel(storeKey);
 			if (!rootModel) {
 				return callback(new Error('Model missing during bind sweep: ' + storeKey));
 			}
 			var model = rootModel.modelForPath(path);
-			this.bind(model, element, callback);
+			this.bind(model, element, uiPath, callback);
 		},
-		bind: function (model, element, callback) {
+		bind: function (model, element, uiPath, callback) {
+			if (typeof uiPath === 'function') {
+				callback = uiPath;
+				uiPath = null;
+			}
+			uiPath = uiPath || null;
 			var thisContext = this;
 			if (!api.is(model)) {
-				model = this.dataStore.open(model);
+				model = this._dataStore.open(model);
 			}
 			if (typeof element === 'string') {
 				element = document.getElementById('string');
 			}
 			
-			this._renderDom(model, element, callback);
+			callback = callback || function () {};
+			this._renderDom(model, element, uiPath, callback);
 		},
 		unbind: function (element) {
 			if (element.boundJsonModel) {
@@ -637,17 +697,17 @@
 				delete element.boundJsonModel;
 				delete element.boundBinding;
 				delete element.boundContext;
-				throw new Error('Unbinding not supported yet');
 			}
 		}
 	};
-	BindingContext.placeholder = function (model, tag, attrs) {
+	BindingContext.placeholder = function (model, tag, attrs, uiPath) {
 		model._root.pokeStore();
 		return magicPlaceholders.join(JSON.stringify({
 			key: model._root.storeKey,
 			path: model._path,
 			tag: tag,
-			attrs: attrs
+			attrs: attrs,
+			ui: uiPath
 		}));
 	};
 	
@@ -709,85 +769,8 @@
 			if (value == null) value = '';
 			return (value + "").escapeHtml().replace(/;/g, ',');
 		},
-		/*
-		bindTo: function (element, bindings) {
-			if (element.boundDataModel === this) return this;
-			if (element.boundDataModel) {
-				element.boundapi.unbindFrom(element);
-			}
-			var elementId;
-			if (typeof element === 'string') {
-				elementId = element;
-				element = document.getElementById(elementId);
-			}
-			if (!element) {
-				throw new Error("Element not found: " + elementId);
-				return;
-			}
-			var currentBinding = null;
-			
-			bindings = binding || api.bindings;
-			if (typeof bindings === 'function') {
-				var constBinding = new Binding({
-					dom: function (model) {
-						var result = bindingHint(model);
-						if (typeof result === 'string') result = Dom.fromHtml(result);
-						return result;
-					}
-				});
-				bindings = {select: function () {return constBinding;}};
-			}
-			
-			var thisModel = this;
-			var updateFunction = function (pointerPath) {
-				var tagName = element.tagName.toLowerCase();
-				var attrs = {};
-				for (var i = 0; i < element.attributes.length; i++) {
-					var attr = element.attributes[i];
-					attrs[name] = attr.value;
-				}
-				var binding = bindings.select(thisModel, tagName, attrs);
-				if (!binding) throw new Error('No suitable binding found');
-
-				if (binding === currentBinding) {
-					if (!binding.shouldUpdate(pointerPath, thisModel)) return;
-				}
-				if (binding !== currentBinding || binding.dom) {
-					if (currentBinding) {
-						currentBinding.unbind(thisModel, element);
-					}
-				}
-
-				if (binding.dom) {
-					var dom = binding.dom(thisModel, tagName, attrs);
-					dom.coerce(element, thisModel);
-				}
-
-				currentBinding = binding;
-
-				// Only call 'bind' once, as it will probably set up callbacks etc.
-				if (binding.bind) {
-					binding.bind(thisModel, element);
-				}
-			};
-			// TODO: calculate binding on update
-			//        - to handle DOM bindings, call binding.unbind() on old one first
-			this.on('change', updateFunction);
-			this.on('schemachange', updateFunction);
-			updateFunction('', thisModel);
-
-			element._dataModelUpdateFunction = updateFunction;
-			element.boundDataModel = this;
-			return this;
-		},
-		unbindFrom: function (element) {
-			this.off('change', element._dataModelUpdateFunction);
-			element.boundDataModel = null;
-			return this;
-		},
-		*/
-		html: function (tag, attrs) {
-			return BindingContext.placeholder(this, tag, attrs);
+		html: function (tag, attrs, uiPath) {
+			return BindingContext.placeholder(this, tag, attrs, uiPath);
 		}
 	});
 	
