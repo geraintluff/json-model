@@ -220,6 +220,7 @@
 	
 	function Binding(bindObj, registerIndex) {
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
+		var thisBinding = this;
 		this.registerIndex = registerIndex;
 
 		if (typeof bindObj.canBind === 'string' || Array.isArray(bindObj.canBind)) {
@@ -273,8 +274,39 @@
 		} else if (typeof bindObj.html === 'string') {
 			this.html = function () {return bindObj.html;};
 		}
-		this.shouldUpdate = bindObj.shouldUpdate || function (pointerPath, model) {
+		
+		var modelEvents = bindObj.modelEvents || {};
+		modelEvents.change = modelEvents.change || function (model, element, pointerPath) {
 			return !pointerPath;
+		};
+
+		this.bindDom = function (context, model, element) {
+			var handlers = context.boundJsonModelEvents = {};
+			Object.keys(modelEvents).forEach(function (key) {
+				var original = modelEvents[key];
+				var handler = handlers[key] = function () {
+					if (element.boundContext !== context) {
+						return thisBinding.unbindDom(context, model, element);
+					}
+					
+					var args = Array.prototype.slice.call(arguments, 0);
+					args = [model, element].concat(args);
+					var shouldRender = original.apply(this, args);
+					if (shouldRender) {
+						throw new Error('Re-rendering not supported yet');
+					}
+				};
+				model.on(key, handler);
+			});
+			
+			model.emit('bind', element);
+		};
+		this.unbindDom = function (context, model, element) {
+			model.emit('unbind', element);
+
+			for (var key in context.boundJsonModelEvents) {
+				model.off(key, handler);
+			}
 		};
 	}
 	Binding.prototype = {
@@ -311,14 +343,14 @@
 			return new BindingContext(this, dataStore || api.dataStore);
 		},
 		addHtml: function (canBind, htmlFunc) {
-			return this.canBind({
+			return this.add({
 				canBind: canBind,
 				html: htmlFunc
 			});
 		},
 		add: function (bindObj) {
 			this._state++;
-			this._immediateOptions.push(new Binding(bindObj));
+			this._immediateOptions.push(new Binding(bindObj, this._state));
 			this._parentState = null; // Trigger re-concatenate on next options() call
 			return this;
 		},
@@ -503,6 +535,43 @@
 				thisContext._renderHtml(model, data.tag, data.attrs, callback);
 			}, callback);
 		},
+		_updateDom: function (element, tag, attrs, callback) {
+			var model = element.boundJsonModel;
+			var binding = element.boundBinding;
+			var context = element.boundContext;
+
+			var innerHtml = binding.html(model, tag, attrs, processHtml);
+			if (typeof innerHtml === 'string') {
+				processHtml(null, innerHtml);
+			}
+
+			function processHtml(error, innerHtml) {
+				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+					try {
+						data = JSON.parse(data);
+					} catch (e) {
+						error = error || e;
+						return context.errorHtml(e);
+					}
+					data.tag = data.tag || 'span';
+					data.attrs = data.attrs || {};
+					data.attrs[dataPropertyStoreKey] = data.key;
+					data.attrs[dataPropertyPath] = data.path;
+					return openTag(data.tag, data.attrs) + closeTag(data.tag);
+				});
+				// DEBUG
+				if (tag !== 'html' && tag !== 'body') {
+					innerHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used</span>' + innerHtml;
+				}
+				
+				var hostElement = element.cloneNode(false);
+				hostElement.innerHTML = innerHtml;
+				context._coerceDom(element, hostElement, null, function (err) {
+					binding.bindDom(context, model, element);
+					if (callback) callback(error || err);
+				});
+			}
+		},
 		_renderDom: function (model, element, callback) {
 			var thisContext = this;
 			
@@ -529,37 +598,8 @@
 				element.boundJsonModel = model;
 				element.boundBinding = binding;
 				element.boundContext = context;
-
-				function processHtml(error, innerHtml) {
-					innerHtml = innerHtml.replace(magicRegex, function (match, data) {
-						try {
-							data = JSON.parse(data);
-						} catch (e) {
-							error = error || e;
-							return context.errorHtml(e);
-						}
-						data.tag = data.tag || 'span';
-						data.attrs = data.attrs || {};
-						data.attrs[dataPropertyStoreKey] = data.key;
-						data.attrs[dataPropertyPath] = data.path;
-						return openTag(data.tag, data.attrs) + closeTag(data.tag);
-					});
-					// DEBUG
-					if (tag !== 'html' && tag !== 'body') {
-						innerHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used</span>' + innerHtml;
-					}
-					
-					var hostElement = element.cloneNode(false);
-					hostElement.innerHTML = innerHtml;
-					context._coerceDom(element, hostElement, null, function (err) {
-						if (callback) callback(error || err);
-					});
-				}
-
-				var innerHtml = binding.html(model, tag, attrs, processHtml);
-				if (typeof innerHtml === 'string') {
-					processHtml(null, innerHtml);
-				}
+				
+				thisContext._updateDom(element, tag, attrs, callback);
 			});
 		},
 		_coerceDom: function coerceDom(subject, target, cullSize, callback) {
@@ -592,11 +632,13 @@
 			if (typeof element === 'string') {
 				element = document.getElementById('string');
 			}
-
+			
 			this._renderDom(model, element, callback);
 		},
 		unbind: function (element) {
 			if (element.boundJsonModel) {
+				element.boundBinding.unbindDom(element.boundContext, element.boundJsonModel, element);
+
 				delete element.boundJsonModel;
 				delete element.boundBinding;
 				delete element.boundContext;
