@@ -279,6 +279,7 @@
 		var thisRootModel = this;
 		this.dataStore = dataStore;
 		this.storeKey = storeKey;
+		this.state = Date.now(); // Just an arbitrary number
 
 		var pendingPoke = null;
 		function pokeNow() {
@@ -403,6 +404,7 @@
 		}
 		
 		this.setPathValue = function (path, newValue) {
+			this.state--;
 			pokeStore();
 			if (!path) {
 				value = newValue;
@@ -578,6 +580,14 @@
 				pathSpec = "";
 			}
 			return this._root.setPathValue(this._path + normPathSpec(pathSpec), value);
+		},
+		up: function (levels) {
+			if (typeof levels !== 'number') {
+				levels = 1;
+			}
+			var parts = this._path.split('/');
+			parts = parts.slice(0, parts.length - levels);
+			return this._root.modelForPath(parts.join('/'));
 		},
 		path: function (pathSpec) {
 			return this._root.modelForPath(this._path + normPathSpec(pathSpec));

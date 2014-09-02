@@ -337,15 +337,11 @@
 			});
 			
 			model.emit('bind', element);
-			if (uiHandlers.bind) {
-				uiHandlers.bind.call(null);
-			}
+			if (uiHandlers.bind) uiHandlers.bind.call(null);
 		};
 		this.unbindDom = function (context, model, element) {
 			model.emit('unbind', element);
-			if (context.boundUiEvents.unbind) {
-				context.boundUiEvents.unbind.call(null);
-			}
+			if (context.boundUiEvents.unbind) context.boundUiEvents.unbind.call(null);
 
 			for (var key in context.boundJsonModelEvents) {
 				var handler = context.boundJsonModelEvents[key];
@@ -508,6 +504,7 @@
 	var dataPropertyStoreKey = 'data-JMstoreKey';
 	var dataPropertyPath = 'data-JMpath';
 	var dataPropertyUiPath = 'data-JMuipath';
+	var dataPropertyState = 'data-JMrevision';
 	function BindingContext(bindings, dataStore) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
@@ -525,12 +522,7 @@
 			if (this._model === model) {
 				result._usedBindings = this._usedBindings.concat(result._usedBindings);
 			}
-			if (typeof uiPath !== 'string') {
-				if ((uiPath === null || uiPath === undefined) && model !== this._model) {
-					uiPath = model.pointer().replace(/.*\//, '/');
-				}
-				uiPath = (uiPath || '') + '';
-			}
+			uiPath = (uiPath || '') + '';
 			result.ui = this.ui.path(uiPath);
 			if (result.ui.jsonType() !== 'object') {
 				result.ui.set('', {});
@@ -547,6 +539,19 @@
 		errorHtml: function (error, tag, attrs) {
 			return '<span class="error">Error: ' + error.message.escapeHtml() + '</span>';
 		},
+		_renderInnerHtml: function (model, binding, tag, attrs, callback) {
+			var context = this;
+			var immediateHtml = binding.html(model, tag, attrs, this.ui, function (error, html) {
+				if (error) return callback(error, html);
+				if (typeof immediateHtml === 'string') {
+					throw new Error('Renderer must either return HTML string or call the callback, but not both');
+				}
+				context.expandHtml(html, callback);
+			});
+			if (typeof immediateHtml === 'string') {
+				context.expandHtml(immediateHtml, callback);
+			}
+		},
 		_renderHtml: function (model, tag, attrs, uiPath, callback) {
 			var thisContext = this;
 			tag = tag || 'span';
@@ -555,19 +560,12 @@
 			var result = function () {
 				var binding = thisContext.selectBinding(model, tag, attrs);
 				var context = thisContext._subContext(model, binding, uiPath);
-				
-				var immediateHtml = binding.html(model, tag, attrs, thisContext.ui, function (error, html) {
-					if (error) return callback(error, html);
-					if (typeof immediateHtml === 'string') {
-						throw new Error('Renderer must either return HTML string or call the callback, but not both');
+				context._renderInnerHtml(model, binding, tag, attrs, function (error, html) {
+					if (typeof html === 'string') {
+						html = openTag(tag, attrs) + html + closeTag(tag);
 					}
-					html = openTag(tag, attrs) + html + closeTag(tag);
-					context.expandHtml(html, callback);
+					callback(error, html);
 				});
-				if (typeof immediateHtml === 'string') {
-					var html = openTag(tag, attrs) + immediateHtml + closeTag(tag);
-					context.expandHtml(html, callback);
-				}
 			};
 			if (model.ready()) {
 				result();
@@ -585,6 +583,9 @@
 				}
 				data.tag = data.tag || 'span';
 				data.attrs = data.attrs || {};
+				data.attrs[dataPropertyStoreKey] = data.key;
+				data.attrs[dataPropertyPath] = data.path;
+				data.attrs[dataPropertyUiPath] = data.ui;
 				data.ui = data.ui || '';
 				var rootModel = thisContext._dataStore._getRootModel(data.key);
 				if (!rootModel) {
@@ -593,21 +594,26 @@
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
+				data.attrs[dataPropertyState] = rootModel.state;
 				thisContext._renderHtml(model, data.tag, data.attrs, data.ui, callback);
 			}, callback);
 		},
 		_updateDom: function (element, tag, attrs, callback) {
+			if (element.pendingDomUpdate) return callback(null);
+			var thisContext = this;
 			var model = element.boundJsonModel;
 			var binding = element.boundBinding;
 			var context = element.boundContext;
 
+			element.pendingDomUpdate = true;
+			var oldRootState = model._root.state;
 			var innerHtml = binding.html(model, tag, attrs, this.ui, processHtml);
 			if (typeof innerHtml === 'string') {
 				processHtml(null, innerHtml);
 			}
 
 			function processHtml(error, innerHtml) {
-				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+				var replacedHtml = innerHtml.replace(magicRegex, function (match, data) {
 					try {
 						data = JSON.parse(data);
 					} catch (e) {
@@ -623,12 +629,31 @@
 				});
 				// DEBUG
 				if (tag !== 'html' && tag !== 'body') {
-					innerHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used</span>' + innerHtml;
+					replacedHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used ' + context.ui._path + '</span>' + replacedHtml;
 				}
 				
 				var hostElement = element.cloneNode(false);
-				hostElement.innerHTML = innerHtml;
+				hostElement.innerHTML = replacedHtml;
 				context._coerceDom(element, hostElement, null, function (err) {
+					element.pendingDomUpdate = false;
+					if (oldRootState !== model._root.state) {
+						console.log('Model changed during rendering: ' + model.url());
+						var newHtml = binding.html(model, tag, attrs, thisContext.ui, function (err2, newHtml) {
+							if (newHtml === innerHtml) {
+								return callback(error || err);
+							}
+							console.log('Re-rendering');
+							return thisContext._updateDom(element, tag, attrs, callback);
+						});
+						if (typeof newHtml === 'string') {
+							if (newHtml === innerHtml) {
+								return callback(error || err);
+							}
+							console.log('Re-rendering');
+							return thisContext._updateDom(element, tag, attrs, callback);
+						}
+						return;
+					}
 					callback(error || err);
 				});
 			}
@@ -651,6 +676,8 @@
 			}
 			
 			model.whenReady(function () {
+				var oldState = model._root.state;
+
 				var binding = thisContext.selectBinding(model, tag, attrs);
 				var context = thisContext._subContext(model, binding, uiPath);
 
@@ -665,10 +692,49 @@
 				element.boundBinding = binding;
 				element.boundContext = context;
 				
+				function htmlReady(error) {
+					scanForChildBindings(element, context, function (err) {
+						binding.bindDom(context, model, element);
+						if (oldState !== model._root.state) {
+							console.log('Model changed during initial render:', model.url());
+							return thisContext._updateDom(element, tag, attrs, callback);
+						}
+						callback(error || err);
+					});
+				}
+
+				if (element.hasAttribute(dataPropertyStoreKey)) {
+					var rootModel = thisContext._dataStore._getRootModel(element.getAttribute(dataPropertyStoreKey));
+					if (rootModel) {
+						var existingModel = rootModel.modelForPath(element.getAttribute(dataPropertyPath));
+						if (model === existingModel) {
+							var stateString = rootModel.state + "";
+							console.log('states:', stateString, element.getAttribute(dataPropertyState));
+							if (stateString === element.getAttribute(dataPropertyState)) {
+								console.log('Rendering is up-to-date for ' + openTag(tag));
+								return htmlReady(null);
+								// Rendering is up-to-date
+							}
+						}
+					}
+				}
+				
+				
+				
+				// TODO: render HTML instead of coercing DOM
+
+				context._renderInnerHtml(model, binding, tag, attrs, function (error, innerHtml) {
+					console.log('Rendered HTML:', innerHtml);
+					element.innerHTML = innerHtml;
+					htmlReady(error);
+				});
+				
+				/*
 				thisContext._updateDom(element, tag, attrs, function (error) {
 					binding.bindDom(context, model, element);
 					return callback(error);
 				});
+				*/
 			});
 		},
 		_coerceDom: function coerceDom(subject, target, cullSize, callback) {

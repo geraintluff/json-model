@@ -38,6 +38,15 @@ describe('Basic model', function () {
 		assert.equal(model.path('/0'), model.item(0));
 	});
 	
+	it('has up()', function () {
+		var model = api.create({'/foo': 'bar'});
+		
+		var child = model.prop('/foo');
+		assert.equal(child.get(), 'bar');
+		assert.equal(child.up(), model);
+		assert.equal(child.prop('baz').up(2), model);
+	});
+	
 	it('schemas and links', function () {
 		var schemaUrl = 'http://example.com/schemas/test' + Math.random();
 		api.schemaStore.add(schemaUrl, {
