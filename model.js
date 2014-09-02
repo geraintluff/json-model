@@ -279,6 +279,7 @@
 		var thisRootModel = this;
 		this.dataStore = dataStore;
 		this.storeKey = storeKey;
+		this.state = Date.now(); // Just an arbitrary number
 
 		var pendingPoke = null;
 		function pokeNow() {
@@ -403,6 +404,7 @@
 		}
 		
 		this.setPathValue = function (path, newValue) {
+			this.state--;
 			pokeStore();
 			if (!path) {
 				value = newValue;

@@ -289,7 +289,7 @@
 		};
 		var uiEvents = bindObj.uiEvents || {};
 		uiEvents.change = uiEvents.change || function (model, element, ui, pointerPath) {
-			return pointerPath.split('/').length <= 2;
+			return pointerPath.split('/').length <= 2 && ui.jsonType(pointerPath) !== 'object';
 		};
 		
 		this.bindDom = function (context, model, element) {
@@ -519,7 +519,16 @@
 			if (this._model === model) {
 				result._usedBindings = this._usedBindings.concat(result._usedBindings);
 			}
-			result.ui = (typeof uiPath === 'string') ? this.ui.path(uiPath) : this.ui;
+			if (typeof uiPath !== 'string') {
+				uiPath = '';
+				if (!this._model || (model !== this._model) && model._root === this._model._root) {
+					uiPath = model._path.replace(/.*\//, '');
+				}
+			}
+			result.ui = this.ui.path(uiPath);
+			if (result.ui.jsonType() !== 'object') {
+				result.ui.set({});
+			}
 			return result;
 		},
 		selectBinding: function (model, tag, attrs) {
@@ -582,17 +591,19 @@
 			}, callback);
 		},
 		_updateDom: function (element, tag, attrs, callback) {
+			var thisContext = this;
 			var model = element.boundJsonModel;
 			var binding = element.boundBinding;
 			var context = element.boundContext;
 
+			var oldRootState = model._root.state;
 			var innerHtml = binding.html(model, tag, attrs, this.ui, processHtml);
 			if (typeof innerHtml === 'string') {
 				processHtml(null, innerHtml);
 			}
 
 			function processHtml(error, innerHtml) {
-				innerHtml = innerHtml.replace(magicRegex, function (match, data) {
+				var replacedHtml = innerHtml.replace(magicRegex, function (match, data) {
 					try {
 						data = JSON.parse(data);
 					} catch (e) {
@@ -608,12 +619,30 @@
 				});
 				// DEBUG
 				if (tag !== 'html' && tag !== 'body') {
-					innerHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used</span>' + innerHtml;
+					replacedHtml = '<span class="debug">' + context._usedBindings.length + ' bindings used ' + context.ui._path + '</span>' + replacedHtml;
 				}
 				
 				var hostElement = element.cloneNode(false);
-				hostElement.innerHTML = innerHtml;
+				hostElement.innerHTML = replacedHtml;
 				context._coerceDom(element, hostElement, null, function (err) {
+					if (oldRootState !== model._root.state) {
+						console.log('Model changed during rendering: ' + model.url());
+						var newHtml = binding.html(model, tag, attrs, thisContext.ui, function (err2, newHtml) {
+							if (newHtml === innerHtml) {
+								return callback(error || err);
+							}
+							console.log('Re-rendering');
+							return thisContext._updateDom(element, tag, attrs, callback);
+						});
+						if (typeof newHtml === 'string') {
+							if (newHtml === innerHtml) {
+								return callback(error || err);
+							}
+							console.log('Re-rendering');
+							return thisContext._updateDom(element, tag, attrs, callback);
+						}
+						return;
+					}
 					callback(error || err);
 				});
 			}
