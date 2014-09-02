@@ -288,9 +288,11 @@
 			return !pointerPath;
 		};
 		var uiEvents = bindObj.uiEvents || {};
+		/*
 		uiEvents.change = uiEvents.change || function (model, element, ui, pointerPath) {
-			return pointerPath.split('/').length <= 2;
+			return pointerPath.split('/').length <= 2 && ui.jsonType(pointerPath) !== 'object';
 		};
+		*/
 		
 		this.bindDom = function (context, model, element) {
 			setInterval(function () {
@@ -335,10 +337,15 @@
 			});
 			
 			model.emit('bind', element);
-			context.ui.emit('bind', model, element);
+			if (uiHandlers.bind) {
+				uiHandlers.bind.call(null);
+			}
 		};
 		this.unbindDom = function (context, model, element) {
 			model.emit('unbind', element);
+			if (context.boundUiEvents.unbind) {
+				context.boundUiEvents.unbind.call(null);
+			}
 
 			for (var key in context.boundJsonModelEvents) {
 				var handler = context.boundJsonModelEvents[key];
@@ -518,7 +525,16 @@
 			if (this._model === model) {
 				result._usedBindings = this._usedBindings.concat(result._usedBindings);
 			}
-			result.ui = (typeof uiPath === 'string') ? this.ui.path(uiPath) : this.ui;
+			if (typeof uiPath !== 'string') {
+				if ((uiPath === null || uiPath === undefined) && model !== this._model) {
+					uiPath = model.pointer().replace(/.*\//, '/');
+				}
+				uiPath = (uiPath || '') + '';
+			}
+			result.ui = this.ui.path(uiPath);
+			if (result.ui.jsonType() !== 'object') {
+				result.ui.set('', {});
+			}
 			return result;
 		},
 		selectBinding: function (model, tag, attrs) {
