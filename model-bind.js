@@ -335,10 +335,11 @@
 			});
 			
 			model.emit('bind', element);
-			context.ui.emit('bind', model, element);
+			if (uiHandlers.bind) uiHandlers.bind.call(null);
 		};
 		this.unbindDom = function (context, model, element) {
 			model.emit('unbind', element);
+			if (context.boundUiEvents.unbind) context.boundUiEvents.unbind.call(null);
 
 			for (var key in context.boundJsonModelEvents) {
 				var handler = context.boundJsonModelEvents[key];
