@@ -513,9 +513,10 @@
 		this._model = null;
 		this._usedBindings = [];
 		this.ui = api.create({});
+		this.includeDataProperties = false;
 	}
 	BindingContext.prototype = {
-		_subContext: function (model, binding, uiPath) {
+		_subContext: function (model, binding, uiPath, includeDataProperties) {
 			var result = Object.create(this._root);
 			result._model = model;
 			result._usedBindings = [binding];
@@ -527,6 +528,7 @@
 			if (result.ui.jsonType() !== 'object') {
 				result.ui.set('', {});
 			}
+			result.includeDataProperties = includeDataProperties || this.includeDataProperties;
 			return result;
 		},
 		selectBinding: function (model, tag, attrs) {
@@ -583,9 +585,6 @@
 				}
 				data.tag = data.tag || 'span';
 				data.attrs = data.attrs || {};
-				data.attrs[dataPropertyStoreKey] = data.key;
-				data.attrs[dataPropertyPath] = data.path;
-				data.attrs[dataPropertyUiPath] = data.ui;
 				data.ui = data.ui || '';
 				var rootModel = thisContext._dataStore._getRootModel(data.key);
 				if (!rootModel) {
@@ -594,7 +593,12 @@
 					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
 				}
 				var model = rootModel.modelForPath(data.path);
-				data.attrs[dataPropertyState] = rootModel.state;
+				if (thisContext.includeDataProperties) {
+					data.attrs[dataPropertyStoreKey] = data.key;
+					data.attrs[dataPropertyPath] = data.path;
+					data.attrs[dataPropertyUiPath] = data.ui;
+					data.attrs[dataPropertyState] = rootModel.state;
+				}
 				thisContext._renderHtml(model, data.tag, data.attrs, data.ui, callback);
 			}, callback);
 		},
@@ -679,7 +683,7 @@
 				var oldState = model._root.state;
 
 				var binding = thisContext.selectBinding(model, tag, attrs);
-				var context = thisContext._subContext(model, binding, uiPath);
+				var context = thisContext._subContext(model, binding, uiPath, true);
 
 				if (element.boundJsonModel) {
 					if (model === element.boundJsonModel) {
@@ -719,22 +723,13 @@
 					}
 				}
 				
-				
-				
-				// TODO: render HTML instead of coercing DOM
-
 				context._renderInnerHtml(model, binding, tag, attrs, function (error, innerHtml) {
 					console.log('Rendered HTML:', innerHtml);
+					// DEBUG
+					innerHtml = '<span class="debug">DOM/HTML render</span>' + innerHtml;
 					element.innerHTML = innerHtml;
 					htmlReady(error);
 				});
-				
-				/*
-				thisContext._updateDom(element, tag, attrs, function (error) {
-					binding.bindDom(context, model, element);
-					return callback(error);
-				});
-				*/
 			});
 		},
 		_coerceDom: function coerceDom(subject, target, cullSize, callback) {
