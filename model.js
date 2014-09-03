@@ -48,13 +48,23 @@
 	}
 	function parseQuery(queryString) {
 		var result = {};
-		(queryString.match(/(^\?|&)([^&]+)/g) || []).forEach(function (part) {
+		(queryString.match(/(^\??|&)([^&]+)/g) || []).forEach(function (part) {
 			part = part.substring(1);
 			var key = part.split('=', 1)[0];
 			var value = part.substring(key.length + 1);
 			result[decodeURIComponent(key)] = decodeURIComponent(value);
 		});
 		return result;
+	}
+	function encodeQuery(query) {
+		var parts = [];
+		for (var key in query) {
+			parts.push(encodeURIComponent(key) + '=' + encodeQueryComponent(query[key]));
+		}
+		return parts.length ? ('?' + parts.join('&')) : '';
+	}
+	function encodeQueryComponent(str) {
+		return encodeURIComponent(str).replace(/%2F/gi, '/');
 	}
 	var asap = (typeof process === 'object' && typeof process.nextTick === 'function') ? process.nextTick.bind(process) : function (func) {
 		setTimeout(func, 0);
@@ -84,6 +94,20 @@
 	
 	var parseUrl = schema2js.util.parseUrl;
 	var resolveUrl = schema2js.util.resolveUrl;
+	var relativeUrl = function (base, href) {
+		href = resolveUrl(window.location.href, href);
+		var loc = window.location.href;
+		if (href === loc) return;
+		var locParsed = parseUrl(loc);
+		var domain = locParsed.protocol + locParsed.authority;
+		var path = window.location.href.replace(/[#?].*/g, '').replace(/\/$/, '');
+		if (href.substring(0, path.length) === path) {
+			href = href.substring(path.length);
+		} else if (href.substring(0, domain.length) === domain) {
+			href = href.substring(domain.length);
+		}
+		return href;
+	};
 	
 	api.util = {
 		pointerEscape: pointerEscape,
@@ -93,7 +117,10 @@
 		url: {
 			parse: parseUrl,
 			resolve: resolveUrl,
-			parseQuery: parseQuery
+			relative: relativeUrl,
+			parseQuery: parseQuery,
+			encodeQuery: encodeQuery,
+			encodeQueryComponent: encodeQueryComponent
 		},
 		timer: {
 			asap: asap,

@@ -50,12 +50,16 @@
 		priority: -10,
 		canBind: {},
 		html: function (model, tag, attrs, context) {
-			var html = '<span class="json-links">';
-			model.links().forEach(function (link) {
-				var stateUrl = context.urlForState(link.href, {});
-				html += '<a class="json-link" ajax href="' + stateUrl.escapeHtml() + '">' + link.rel.escapeHtml() + ': ' + link.href.escapeHtml() + '</a> ';
-			});
-			html += '</span>';
+			var html = '';
+			var links = model.links();
+			if (links.length) {
+				html += '<span class="json-links">';
+				links.forEach(function (link) {
+					var stateUrl = context.urlForState(link.href, {});
+					html += '<a class="json-link" ajax href="' + stateUrl.escapeHtml() + '">' + link.rel.escapeHtml() + ': ' + link.href.escapeHtml() + '</a> ';
+				});
+				html += '</span>';
+			}
 			html += model.html();
 			return html;
 		}

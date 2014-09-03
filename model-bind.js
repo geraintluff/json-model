@@ -237,6 +237,8 @@
 		if (!(this instanceof Binding)) return new Binding(bindObj, registerIndex);
 		var thisBinding = this;
 		this.registerIndex = registerIndex;
+		
+		this.preferDom = !!bindObj.preferDom;
 
 		if (typeof bindObj.canBind === 'string' || Array.isArray(bindObj.canBind)) {
 			bindObj.canBind = {schema: bindObj.canBind};
@@ -395,11 +397,11 @@
 			}
 			return this._concatOptions;
 		},
-		addHtml: function (canBind, htmlFunc) {
-			return this.add({
-				canBind: canBind,
-				html: htmlFunc
-			});
+		addHtml: function (canBind, htmlFunc, extra) {
+			var bindObj = Object.create(extra || {});
+			bindObj.canBind = canBind;
+			bindObj.html = htmlFunc;
+			return this.add(bindObj);
 		},
 		add: function (bindObj) {
 			this._state++;
@@ -520,24 +522,14 @@
 	api.bindings = new Bindings();
 	
 	api.navigateTo = function (href) {
-		href = resolveUrl(window.location.href, href);
-		var loc = window.location.href;
-		if (href === loc) return;
-		var locParsed = parseUrl(loc);
-		var domain = locParsed.protocol + locParsed.authority;
-		var path = window.location.href.replace(/[#?].*/g, '');
-		if (href.substring(0, path.length) === path) {
-			href = href.substring(path.length);
-		} else if (href.substring(0, domain.length) === domain) {
-			href = href.substring(domain.length);
-		} else {
+		var relative = api.util.url.relative(window.location.href, href);
+		if (relative === href) {
 			window.location.href = href;
 			return;
-		}
-		if (typeof history === 'object' && typeof history.pushState === 'function') {
-			history.pushState(null, null, href);
+		} else if (typeof history === 'object' && typeof history.pushState === 'function') {
+			history.pushState(null, null, relative);
 		} else {
-			window.location.href = '#' + encodeURI(href).replace(/#/g, '%23');
+			window.location.href = '#' + encodeURI(relative).replace(/#/g, '%23');
 		}
 	};
 	
@@ -561,7 +553,10 @@
 		this.includeDataProperties = false;
 		
 		this.urlForState = function (resourceUrl, newUiState) {
-			return '?json=' + encodeURIComponent(resourceUrl);
+			if (typeof window === 'object' && window.location && typeof window.location.href === 'string') {
+				resourceUrl = api.util.url.relative(window.location.href, resourceUrl);
+			}
+			return api.util.url.encodeQuery({json: resourceUrl}) || '?';
 		};
 		this.stateForUrl = function (url) {
 			var parsed = api.util.url.parse(url);
@@ -588,12 +583,17 @@
 		monitorLocation: function (element) {
 			var thisContext = this;
 			
+			var emitter = new api.EventEmitter();
+			
 			var getHref = function () {
 				return window.location.href;
 			};
 			
 			var oldHref = null;
+			var pending = false;
+			var isFirst = true;
 			var updateFromLocation = function () {
+				if (pending) return;
 				var href = getHref();
 				if (href === oldHref) return;
 				oldHref = href;
@@ -603,16 +603,23 @@
 				console.log('New URL:', newHref);
 				
 				var state = thisContext.stateForUrl(newHref);
-				var resourceUrl = state[0], uiState = state[1];
+				var resourceUrl = state[0], uiState = state[1] || {};
 				console.log('New state:', resourceUrl, uiState);
 				if (resourceUrl) {
+					pending = true;
+					emitter.emit('change', resourceUrl, uiState, isFirst);
 					// Reset the UI state, don't bother trying to change it
-					thisContext.ui = thisContext._dataStore.create(state[1] || {});
-					thisContext.bind(state[0], element);
+					thisContext.ui = thisContext._dataStore.create(uiState);
+					thisContext.bind(resourceUrl, element, function () {
+						emitter.emit('change-done', resourceUrl, uiState);
+						pending = false;
+					});
 				} else {
+					emitter.emit('ui', uiState);
 					// Update the UI state, leaving the URL the same
 					thisContext.ui.set('', uiState);
 				}
+				isFirst = false;
 			}
 
 			if (typeof history === 'object' && typeof history.pushState === 'function') {
@@ -620,9 +627,7 @@
 			}
 			
 			var interval = setInterval(updateFromLocation, 100);
-			return function () {
-				clearInterval(interval);
-			};
+			return emitter;
 		},
 		navigateTo: function (href) {
 			api.navigateTo(href);
@@ -803,6 +808,20 @@
 				element.boundJsonModel = model;
 				element.boundBinding = binding;
 				element.boundContext = context;
+				
+				if (binding.preferDom) {
+					model.whenReady(function () {
+						thisContext._updateDom(element, tag, attrs, function (error) {
+							binding.bindDom(context, model, element);
+							if (oldState !== model._root.state) {
+								console.log('Model changed during initial render:', model.url());
+								return thisContext._updateDom(element, tag, attrs, callback);
+							}
+							callback(error);
+						});
+					});
+					return;
+				}
 				
 				function htmlReady(error) {
 					scanForChildBindings(element, context, function (err) {
