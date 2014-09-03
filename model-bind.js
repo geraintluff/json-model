@@ -13,7 +13,8 @@
 })(this, function (api) {
 
 	var asap = api.util.timer.asap;
-	var resolveUrl = api.util.resolveUrl;
+	var resolveUrl = api.util.url.resolve;
+	var parseUrl = api.util.url.parse;
 
 	function isAttached(element) {
 		var e = element;
@@ -68,6 +69,12 @@
 
 		// TODO: better walk, not recursive
 		if (element.nodeType === 1) {
+			if (element.tagName.toLowerCase() === 'a') {
+				if (element.hasAttribute('ajax') || element.hasAttribute('data-ajax')) {
+					context.ajaxLink(element);
+				}
+			}
+			
 			for (var i = 0; i < element.childNodes.length; i++) {
 				var child = element.childNodes[i];
 				if (child.nodeType === 1) {
@@ -295,11 +302,16 @@
 		*/
 		
 		this.bindDom = function (context, model, element) {
-			setInterval(function () {
+			// TODO: polling is *nasty*
+			var checkUnattached = function () {
 				if (!isAttached(element)) {
 					console.log('Detached from document: ', element);
+					context.unbind(element);
+					clearInterval(checkInterval);
+					return true;
 				}
-			}, 1000);
+			};
+			var checkInterval = setInterval(checkUnattached, 1000);
 
 			var modelHandlers = context.boundJsonModelEvents = {};
 			Object.keys(modelEvents).forEach(function (key) {
@@ -310,7 +322,7 @@
 					}
 					
 					var args = Array.prototype.slice.call(arguments, 0);
-					args = [model, element, context.ui].concat(args);
+					args = [model, element, context].concat(args);
 					var shouldRender = original.apply(this, args);
 					if (shouldRender) {
 						context.bind(model, element);
@@ -327,7 +339,7 @@
 					}
 					
 					var args = Array.prototype.slice.call(arguments, 0);
-					args = [model, element, context.ui].concat(args);
+					args = [model, element, context].concat(args);
 					var shouldRender = original.apply(this, args);
 					if (shouldRender) {
 						context.bind(model, element);
@@ -383,9 +395,6 @@
 			}
 			return this._concatOptions;
 		},
-		context: function (dataStore) {
-			return new BindingContext(this, dataStore || api.dataStore);
-		},
 		addHtml: function (canBind, htmlFunc) {
 			return this.add({
 				canBind: canBind,
@@ -410,15 +419,28 @@
 		}
 	};
 	if (typeof require === 'function' && typeof module !== 'undefined') {
-		Bindings.prototype.includeDir = function (dirname) {
-			var thisBindings = this;
-			try {
-				var items = require('fs').readdirSync(dirname);
-			} catch (e) {
-				dirname = require.resolve(dirname);
-				console.log(dirname);
-				var items = require('fs').readdirSync(dirname);
+		Bindings.prototype.include = function (json) {
+			var path = require('path');
+			if (typeof json === 'string') {
+				try {
+					json = require(path.resolve(json));
+				} catch (e) {
+					json = require(json);
+				}
 			}
+			var thisBindings = this;
+			(json.js || []).forEach(function (jsPath) {
+				this.includeJs(jsPath);
+			});
+			(json.css || []).forEach(function (cssPath) {
+				this.includeCss(cssPath);
+			});
+		};
+		Bindings.prototype.includeDir = function (dirname) {
+			var path = require('path'), fs = require('fs');
+			var thisBindings = this;
+			var items = require('fs').readdirSync(dirname);
+			items.sort();
 			items.forEach(function (filename) {
 				if (/\.js$/i.test(filename)) {
 					thisBindings.includeJs(dirname + '/' + filename);
@@ -433,8 +455,9 @@
 			this._includeCss = ((this._includeCss || '') + '\n\n' + code).replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
 		};
 		Bindings.prototype.includeJs = function (filename) {
+			var path = require('path');
 			if (filename.charAt(0) === '.') {
-				filename = require('path').join(process.cwd(), filename);
+				filename = path.join(process.cwd(), filename);
 			}
 			var after = [];
 			['bindings', 'JsonModel'].forEach(function (key) {
@@ -448,9 +471,9 @@
 			global.bindings = this;
 			global.JsonModel = api;
 			
-			require(filename);
+			require(path.resolve(filename));
 			var code = require('fs').readFileSync(filename, {encoding: 'utf-8'});
-			code = '/*** ' + require('path').basename(filename) + ' ***/\n\n' + code;
+			code = '/*** ' + path.basename(filename) + ' ***/\n\n' + code;
 			this._includeJs = ((this._includeJs || '') + '\n\n' + code).replace(/^(\r?\n)*/g, '').replace(/(\r?\n)*$/g, '');
 			
 			while (after.length) after.pop()();
@@ -496,24 +519,55 @@
 	}
 	api.bindings = new Bindings();
 	
+	api.navigateTo = function (href) {
+		href = resolveUrl(window.location.href, href);
+		var loc = window.location.href;
+		if (href === loc) return;
+		var locParsed = parseUrl(loc);
+		var domain = locParsed.protocol + locParsed.authority;
+		var path = window.location.href.replace(/[#?].*/g, '');
+		if (href.substring(0, path.length) === path) {
+			href = href.substring(path.length);
+		} else if (href.substring(0, domain.length) === domain) {
+			href = href.substring(domain.length);
+		} else {
+			window.location.href = href;
+			return;
+		}
+		if (typeof history === 'object' && typeof history.pushState === 'function') {
+			history.pushState(null, null, href);
+		} else {
+			window.location.href = '#' + encodeURI(href).replace(/#/g, '%23');
+		}
+	};
+	
 	// Something nobody would actually output, and would be HTML-escaped if it were in content anyway
 	//    TODO: XSS?  E.g. code not removed by HTML sanitiser, causes rendering of external resource when only safe local content expected, renderer dumps raw HTML to page
 	//    Could introduce secret/random component to fight this
-	var magicPlaceholders = ['<JM--', '-->']; 
-	var magicRegex = /<JM--(.*?)-->/g;
+	var magicPlaceholders = ['\u003cJM--', '-->']; // \u003c == '<', but it means we don't match ourselves accidentally
+	var magicRegex = /\u003cJM--(.*?)-->/g;
 	var dataPropertyStoreKey = 'data-JMstoreKey';
 	var dataPropertyPath = 'data-JMpath';
 	var dataPropertyUiPath = 'data-JMuipath';
 	var dataPropertyState = 'data-JMrevision';
-	function BindingContext(bindings, dataStore) {
+	function BindingContext(bindings, dataStore, initialUi) {
 		this._bindings = bindings;
 		this._dataStore = dataStore;
 		// Sub-binding stuff
 		this._root = this;
 		this._model = null;
 		this._usedBindings = [];
-		this.ui = api.create({});
+		this.ui = this._dataStore.create(initialUi || {});
 		this.includeDataProperties = false;
+		
+		this.urlForState = function (resourceUrl, newUiState) {
+			return '?json=' + encodeURIComponent(resourceUrl);
+		};
+		this.stateForUrl = function (url) {
+			var parsed = api.util.url.parse(url);
+			var query = api.util.url.parseQuery(parsed.search);
+			return [query.json, {}];
+		};
 	}
 	BindingContext.prototype = {
 		_subContext: function (model, binding, uiPath, includeDataProperties) {
@@ -531,6 +585,59 @@
 			result.includeDataProperties = includeDataProperties || this.includeDataProperties;
 			return result;
 		},
+		monitorLocation: function (element) {
+			var thisContext = this;
+			
+			var getHref = function () {
+				return window.location.href;
+			};
+			
+			var oldHref = null;
+			var updateFromLocation = function () {
+				var href = getHref();
+				if (href === oldHref) return;
+				oldHref = href;
+				var fragment = href.replace(/^[^#]*/, '').substring(1);
+				fragment = decodeURIComponent(fragment);
+				var newHref = resolveUrl(href.replace(/#.*/, ''), fragment)
+				console.log('New URL:', newHref);
+				
+				var state = thisContext.stateForUrl(newHref);
+				var resourceUrl = state[0], uiState = state[1];
+				console.log('New state:', resourceUrl, uiState);
+				if (resourceUrl) {
+					// Reset the UI state, don't bother trying to change it
+					thisContext.ui = thisContext._dataStore.create(state[1] || {});
+					thisContext.bind(state[0], element);
+				} else {
+					// Update the UI state, leaving the URL the same
+					thisContext.ui.set('', uiState);
+				}
+			}
+
+			if (typeof history === 'object' && typeof history.pushState === 'function') {
+				window.onpopstate = updateFromLocation;
+			}
+			
+			var interval = setInterval(updateFromLocation, 100);
+			return function () {
+				clearInterval(interval);
+			};
+		},
+		navigateTo: function (href) {
+			api.navigateTo(href);
+		},
+		ajaxLink: function (a) {
+			var thisContext = this;
+			a.onclick = a.onclick || function (event) {
+				var href = a.getAttribute('href');
+				if (typeof href === 'string') {
+					thisContext.navigateTo(href);
+					event.preventDefault();
+					return false;
+				}
+			}
+		},
 		selectBinding: function (model, tag, attrs) {
 			if (model === this._model) {
 				return this._bindings.select(model, tag, attrs, this._usedBindings);
@@ -543,7 +650,7 @@
 		},
 		_renderInnerHtml: function (model, binding, tag, attrs, callback) {
 			var context = this;
-			var immediateHtml = binding.html(model, tag, attrs, this.ui, function (error, html) {
+			var immediateHtml = binding.html(model, tag, attrs, this, function (error, html) {
 				if (error) return callback(error, html);
 				if (typeof immediateHtml === 'string') {
 					throw new Error('Renderer must either return HTML string or call the callback, but not both');
@@ -581,6 +688,7 @@
 				try {
 					data = JSON.parse(data);
 				} catch (e) {
+					console.log(data, html);
 					return callback(e);
 				}
 				data.tag = data.tag || 'span';
@@ -611,7 +719,7 @@
 
 			element.pendingDomUpdate = true;
 			var oldRootState = model._root.state;
-			var innerHtml = binding.html(model, tag, attrs, this.ui, processHtml);
+			var innerHtml = binding.html(model, tag, attrs, this, processHtml);
 			if (typeof innerHtml === 'string') {
 				processHtml(null, innerHtml);
 			}
@@ -642,7 +750,7 @@
 					element.pendingDomUpdate = false;
 					if (oldRootState !== model._root.state) {
 						console.log('Model changed during rendering: ' + model.url());
-						var newHtml = binding.html(model, tag, attrs, thisContext.ui, function (err2, newHtml) {
+						var newHtml = binding.html(model, tag, attrs, thisContext, function (err2, newHtml) {
 							if (newHtml === innerHtml) {
 								return callback(error || err);
 							}
@@ -713,18 +821,15 @@
 						var existingModel = rootModel.modelForPath(element.getAttribute(dataPropertyPath));
 						if (model === existingModel) {
 							var stateString = rootModel.state + "";
-							console.log('states:', stateString, element.getAttribute(dataPropertyState));
 							if (stateString === element.getAttribute(dataPropertyState)) {
-								console.log('Rendering is up-to-date for ' + openTag(tag));
+								// Rendering is up-to-date, so we don't need to do DOM coercion
 								return htmlReady(null);
-								// Rendering is up-to-date
 							}
 						}
 					}
 				}
 				
 				context._renderInnerHtml(model, binding, tag, attrs, function (error, innerHtml) {
-					console.log('Rendered HTML:', innerHtml);
 					// DEBUG
 					innerHtml = '<span class="debug">DOM/HTML render</span>' + innerHtml;
 					element.innerHTML = innerHtml;
@@ -761,7 +866,7 @@
 				model = this._dataStore.open(model);
 			}
 			if (typeof element === 'string') {
-				element = document.getElementById('string');
+				element = document.getElementById(element);
 			}
 			
 			callback = callback || function () {};
@@ -787,6 +892,7 @@
 			ui: uiPath
 		}));
 	};
+	api.context = new BindingContext(api.bindings, api.dataStore);
 	
 	String.prototype.escapeHtml = function () {
 		return this.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

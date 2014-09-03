@@ -1,4 +1,3 @@
-//48ca14309f9d04d3a1b55b77e5e9a300a3b5f0e0
 (function (global, factory) {
 	if (typeof define === 'function' && define.amd) {
 		// AMD. Register as an anonymous module.
@@ -67,7 +66,9 @@
 		return false;
 	}
 	api.util = {
-		resolveUrl: resolveUrl
+		parseUrl: parseURI,
+		resolveUrl: resolveUrl,
+		isSubUrl: isTrustedUrl
 	};
 	
 	var SchemaStore = api.SchemaStore = function SchemaStore(parent) {

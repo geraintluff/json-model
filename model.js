@@ -46,6 +46,16 @@
 		});
 		return result;
 	}
+	function parseQuery(queryString) {
+		var result = {};
+		(queryString.match(/(^\?|&)([^&]+)/g) || []).forEach(function (part) {
+			part = part.substring(1);
+			var key = part.split('=', 1)[0];
+			var value = part.substring(key.length + 1);
+			result[decodeURIComponent(key)] = decodeURIComponent(value);
+		});
+		return result;
+	}
 	var asap = (typeof process === 'object' && typeof process.nextTick === 'function') ? process.nextTick.bind(process) : function (func) {
 		setTimeout(func, 0);
 	};
@@ -72,6 +82,7 @@
 		};
 	};
 	
+	var parseUrl = schema2js.util.parseUrl;
 	var resolveUrl = schema2js.util.resolveUrl;
 	
 	api.util = {
@@ -79,7 +90,11 @@
 		pointerUnescape: pointerUnescape,
 		splitHeader: splitHeader,
 		parseLink: parseLink,
-		resolveUrl: resolveUrl,
+		url: {
+			parse: parseUrl,
+			resolve: resolveUrl,
+			parseQuery: parseQuery
+		},
 		timer: {
 			asap: asap,
 			wait: timerWait
@@ -541,7 +556,7 @@
 	}
 	Model.prototype = {
 		url: function () {
-			return this._root.url + '#' + encodeURI(this._path);
+			return this._root.url + (this._path && ('#' + encodeURI(this._path)));
 		},
 		httpStatus: function (status) {
 			return this._root.http.status;
@@ -638,15 +653,15 @@
 			}
 			keys = keys || this.keys();
 			for (var i = 0; i < keys.length; i++) {
-				callback(this.prop(keys[i]), keys[i]);
+				callback(this.prop(keys[i]), keys[i], i);
 			}
 			return this;
 		},
 		mapProps: function (keys, callback) {
 			if (typeof keys === 'function') {
 				var result = {};
-				this.props(function (prop, key) {
-					var entry = keys(prop, key);
+				this.props(function (prop, key, index) {
+					var entry = keys(prop, key, index);
 					if (typeof entry !== 'undefined') {
 						result[key] = entry;
 					}
@@ -655,7 +670,7 @@
 			} else {
 				var result = [];
 				for (var i = 0; i < keys.length; i++) {
-					var entry = callback(this.prop(keys[i]), keys[i]);
+					var entry = callback(this.prop(keys[i]), keys[i], i);
 					if (typeof entry !== 'undefined') {
 						result.push(entry);
 					}
@@ -862,7 +877,9 @@
 				pendingDone();
 
 				if (callback) {
-					model.whenReady(callback);
+					model.whenReady(function () {
+						callback(error, model);
+					});
 				}
 			});
 			

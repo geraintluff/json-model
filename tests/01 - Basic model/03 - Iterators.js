@@ -38,13 +38,13 @@ describe('Model iterators', function () {
 			args[key] = model.pointer();
 		});
 		var args2 = [];
-		var result = model.props(['foo', 'baz'], function (model, key) {
-			args2.push([key, model.pointer()]);
+		var result = model.props(['foo', 'baz'], function (model, key, index) {
+			args2.push([key, model.pointer(), index]);
 		});
 		
 		assert.equal(result, model);
 		assert.deepEqual(args, {foo: '/foo', bar: '/bar', baz: '/baz'});
-		assert.deepEqual(args2, [['foo', '/foo'], ['baz', '/baz']]);
+		assert.deepEqual(args2, [['foo', '/foo', 0], ['baz', '/baz', 1]]);
 	});
 
 	it('mapProps', function () {
