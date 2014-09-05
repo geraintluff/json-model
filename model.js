@@ -977,7 +977,11 @@
 			if (params.method !== 'GET') throw new Error('Only GET supported for now');
 			
 			var request = new XMLHttpRequest();
-			request.open(params.method, params.url, true, params.user, params.password);
+			try {
+				request.open(params.method, params.url, true, params.user, params.password);
+			} catch (e) {
+				asap(callback(e));
+			}
 			request.responseType = 'text';
 			request.onreadystatechange = function () {
 				if (request.readyState !== 4) return;
