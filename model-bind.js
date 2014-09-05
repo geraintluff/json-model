@@ -750,7 +750,17 @@
 				}
 				
 				var hostElement = element.cloneNode(false);
-				hostElement.innerHTML = replacedHtml;
+				try {
+					hostElement.innerHTML = replacedHtml;
+				} catch (e) {
+					if (tag === 'html' && typeof DOMParser === 'function') { // IE 9
+						var parser = new DOMParser();
+						var doc = parser.parseFromString(openTag(tag, attrs) + replacedHtml + closeTag(tag), 'text/html');
+						hostElement = doc.documentElement;
+					} else {
+						throw e;
+					}
+				}
 				context._coerceDom(element, hostElement, null, function (err) {
 					element.pendingDomUpdate = false;
 					if (oldRootState !== model._root.state) {
