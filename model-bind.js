@@ -750,17 +750,22 @@
 				}
 				
 				var hostElement = element.cloneNode(false);
+				hostElement.innerHTML = replacedHtml;
+				/* Failed attempt at IE9 compatibility (the doc.open() call is failing with "Unspecified Error")
 				try {
 					hostElement.innerHTML = replacedHtml;
 				} catch (e) {
-					if (tag === 'html' && typeof DOMParser === 'function') { // IE 9
-						var parser = new DOMParser();
-						var doc = parser.parseFromString(openTag(tag, attrs) + replacedHtml + closeTag(tag), 'text/html');
+					if (tag === 'html' && document.implementation && document.implementation.createHTMLDocument) {
+						var doc = document.implementation.createHTMLDocument('');
+						doc.open();
+						doc.write(replacedHtml);
+						doc.close();
 						hostElement = doc.documentElement;
 					} else {
 						throw e;
 					}
 				}
+				*/
 				context._coerceDom(element, hostElement, null, function (err) {
 					element.pendingDomUpdate = false;
 					if (oldRootState !== model._root.state) {

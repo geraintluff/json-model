@@ -980,7 +980,9 @@
 			try {
 				request.open(params.method, params.url, true, params.user, params.password);
 			} catch (e) {
-				asap(callback(e));
+				return asap(function () {
+					callback(e);
+				});
 			}
 			request.responseType = 'text';
 			request.onreadystatechange = function () {
