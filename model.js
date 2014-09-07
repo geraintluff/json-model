@@ -207,7 +207,7 @@
 	};
 	
 	var schemaStore, generator, generatedClasses;
-	var generatorConfig = {classes: false, assignment: true, linkAssignment: true, trackMissing: true, schemaStore: schemaStore};
+	var generatorConfig = {classes: false, assignment: true, linkAssignment: true, trackMissing: true, schemaStore: schemaStore, directMethods: false};
 	var clean = api.clean = function setupClean(callback) {
 		if (callback) {
 			// If possible, delay cleaning until schemas fetched
@@ -585,6 +585,9 @@
 		url: function () {
 			return this._root.url + (this._path && ('#' + encodeURI(this._path)));
 		},
+		resolveUrl: function (url) {
+			return resolveUrl(this._root.url, url);
+		},
 		httpStatus: function (status) {
 			return this._root.http.status;
 		},
@@ -865,16 +868,16 @@
 			var thisStore = this;
 			
 			params = this.normParams(params);
-			var fragment = params.url.replace(/^[^#]*#?/, '');
-			params.url = params.url.replace(/#.*/, '');
 		
-			if (fragment) throw new Error('Fragments not currently supported: #' + fragment);
+			if (params.fragment && params.fragment.charAt(0) !== '/') {
+				throw new Error('Non-pointer fragments not currently supported: #' + params.fragment);
+			}
 			
 			var storeKey = this._keyForParams(params);
 			var cached = this._getRootModel(storeKey);
 			var rootModel = this._getRootModel(storeKey, true);
 			rootModel.url = params.url;
-			var model = rootModel.modelForPath('');
+			var model = rootModel.modelForPath(params.fragment || '');
 			if (cached) {
 				console.log('Cached:', storeKey);
 				if (callback) model.whenReady(callback);
