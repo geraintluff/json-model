@@ -24,7 +24,13 @@
 		return e === element.ownerDocument;
 	}
 	
-	function openTag(tagName, attrs) {
+	function htmlTag(tagName, attrs) {
+		var content = Array.prototype.slice.call(arguments, 2);
+		if (typeof attrs !== 'object') {
+			content.unshift(attrs);
+			attrs = null;
+		}
+
 		var html = '<' + tagName;
 		for (var key in attrs) {
 			var value = attrs[key];
@@ -36,13 +42,10 @@
 				html += " " + key.escapeHtml() + '="' + value.toString().escapeHtml() + '"';
 			}
 		}
-		html += '>';
-		return html;
+		return html += '>' + content.join('') + '</' + tagName + '>';
 	}
-	function closeTag(tagName) {
-		return '</' + tagName + '>';
-	}
-	
+	api.util.tag = htmlTag;
+		
 	var specialAttributes = {
 		'class': function (element, value) {
 			if (value === null) {
@@ -676,7 +679,7 @@
 				var context = thisContext._subContext(model, binding, uiPath);
 				context._renderInnerHtml(model, binding, tag, attrs, function (error, html) {
 					if (typeof html === 'string') {
-						html = openTag(tag, attrs) + html + closeTag(tag);
+						html = htmlTag(tag, attrs, html)
 					}
 					callback(error, html);
 				});
@@ -703,7 +706,7 @@
 				if (!rootModel) {
 					var error = new Error('Missing from data store: ' + data.key);
 					var errorHtml = thisContext.errorHtml(error, data.tag, data.attrs)
-					return callback(error, openTag(data.tag, data.attrs) + errorHtml + closeTag(data.tag, data.attrs));
+					return callback(error, htmlTag(data.tag, data.attrs, errorHtml));
 				}
 				var model = rootModel.modelForPath(data.path);
 				if (thisContext.includeDataProperties) {
@@ -742,7 +745,7 @@
 					data.attrs[dataPropertyStoreKey] = data.key;
 					data.attrs[dataPropertyPath] = data.path;
 					data.attrs[dataPropertyUiPath] = data.ui;
-					return openTag(data.tag, data.attrs) + closeTag(data.tag);
+					return htmlTag(data.tag, data.attrs);
 				});
 				// DEBUG
 				if (tag !== 'html' && tag !== 'body') {
