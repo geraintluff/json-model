@@ -24,13 +24,32 @@
 		return e === element.ownerDocument;
 	}
 	
+	function expandTag(tagName, attrs) {
+		var parts = tagName.match(/[#\.][^#\.]+/g) || [];
+		tagName = tagName.replace(/[#\.].*/, '') || 'span';
+		parts.forEach(function (part) {
+			if (part.charAt(0) === '#') {
+				attrs.id = args.substring(1);
+			} else {
+				if (attrs['class']) {
+					attrs['class'] += ' ' + part.substring(1);
+				} else {
+					attrs['class'] = part.substring(1);
+				}
+			}
+		});
+		return tagName || 'span';
+	}
+	
 	function htmlTag(tagName, attrs) {
 		var content = Array.prototype.slice.call(arguments, 2);
 		if (typeof attrs !== 'object') {
 			content.unshift(attrs);
 			attrs = null;
 		}
-
+		attrs = attrs || {};
+		tagName = expandTag(tagName, attrs);
+		
 		var html = '<' + tagName;
 		for (var key in attrs) {
 			var value = attrs[key];
@@ -990,6 +1009,12 @@
 			return (value + "").escapeHtml().replace(/;/g, ',');
 		},
 		html: function (tag, attrs, uiPath) {
+			if (typeof attrs !== 'object') {
+				uiPath = attrs;
+				attrs = undefined;
+			}
+			attrs = attrs || {};
+			tag = expandTag(tag || '', attrs);
 			return BindingContext.placeholder(this, tag, attrs, uiPath);
 		}
 	});
