@@ -544,6 +544,7 @@
 	api.bindings = new Bindings();
 	
 	api.navigateTo = function (href) {
+		href = api.util.url.resolve(window.location.href, href); // Make absolute
 		var relative = api.util.url.relative(window.location.href, href);
 		if (relative === href) {
 			window.location.href = href;
