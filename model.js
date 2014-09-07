@@ -94,14 +94,14 @@
 	
 	var parseUrl = schema2js.util.parseUrl;
 	var resolveUrl = schema2js.util.resolveUrl;
-	var relativeUrl = function (base, href) {
-		href = resolveUrl(window.location.href, href);
-		var loc = window.location.href;
-		if (href === loc) return;
+	var relativeUrl = function (base, href, keepAbsolutePath) {
+		href = resolveUrl(base, href);
+		var loc = base;
+		if (!keepAbsolutePath && href === loc) return;
 		var locParsed = parseUrl(loc);
 		var domain = locParsed.protocol + locParsed.authority;
-		var path = window.location.href.replace(/[#?].*/g, '').replace(/\/$/, '');
-		if (href.substring(0, path.length) === path) {
+		var path = base.replace(/[#?].*/g, '').replace(/\/$/, '');
+		if (!keepAbsolutePath && href.substring(0, path.length) === path) {
 			href = href.substring(path.length);
 		} else if (href.substring(0, domain.length) === domain) {
 			href = href.substring(domain.length);
@@ -587,6 +587,9 @@
 		},
 		resolveUrl: function (url) {
 			return resolveUrl(this._root.url, url);
+		},
+		relativeUrl: function (url, keepAbsolutePath) {
+			return relativeUrl(this._root.url, url, keepAbsolutePath);
 		},
 		httpStatus: function (status) {
 			return this._root.http.status;

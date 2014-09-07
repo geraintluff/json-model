@@ -56,7 +56,11 @@
 				html += '<span class="json-links">';
 				links.forEach(function (link) {
 					var stateUrl = context.urlForState(link.href, {});
-					html += '<a class="json-link" ajax href="' + stateUrl.escapeHtml() + '">' + link.rel.escapeHtml() + ': ' + link.href.escapeHtml() + '</a> ';
+					if (stateUrl) {
+						html += '<a class="json-link" ajax href="' + stateUrl.escapeHtml() + '">' + link.rel.escapeHtml() + ': ' + link.href.escapeHtml() + '</a> ';
+					} else {
+						html += '<a class="json-link" href="' + link.href.escapeHtml() + '">' + link.rel.escapeHtml() + ': ' + link.href.escapeHtml() + '</a> ';
+					}
 				});
 				html += '</span>';
 			}
