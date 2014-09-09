@@ -100,8 +100,12 @@ module.exports = function (grunt) {
 		knownSchemas[metaSchema4.id] = metaSchema4;
 
 		// Write files for browser version
+		function copy(from, to) {
+			fs.writeFileSync(to, fs.readFileSync(from));
+		}
 		fs.writeFileSync(__dirname + '/comparison/tests.json', JSON.stringify(tests, null, '\t'));
 		fs.writeFileSync(__dirname + '/comparison/known-schemas.json', JSON.stringify(knownSchemas, null, '\t'));
+		copy(__dirname + '/node_modules/z-schema/dist/ZSchema-browser.js', __dirname + '/comparison/others/ZSchema-browser.js');
 
 		console.log(tests.length + ' tests');
 		var targetMs = 1000*20;

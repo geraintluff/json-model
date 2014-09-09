@@ -2,12 +2,12 @@
 (function (global, factory) {
 	if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('../'), require('json-model'), require('tv4'));
+		module.exports = factory(require('../'), require('json-model'), require('tv4'), require('z-schema'));
 	} else {
 		// Browser globals
-		global.comparison = factory(global.JsonModel, null, global.tv4);
+		global.comparison = factory(global.JsonModel, null, global.tv4, global.ZSchema);
 	}
-})(this, function (JsonModel, oldApi, tv4) {
+})(this, function (JsonModel, oldApi, tv4, ZSchema) {
 	var api = {};
 
 	var Validator = api.Validator = function Validator(name, validatorGenerator) {
@@ -18,8 +18,9 @@
 		runTests: function (tests, targetMs, maxRepeats) {
 			var thisValidator = this;
 			var testSetups = tests.map(function (test) {
+				var schema = JSON.parse(JSON.stringify(test.schema)); // Some of the validators modify the schema object
 				return {
-					validator: thisValidator.validatorGenerator(test.schema),
+					validator: thisValidator.validatorGenerator(schema),
 					test: test
 				};
 			});
@@ -57,7 +58,7 @@
 			properties: {
 				name: {title: 'Setup', type: 'string'},
 				ms: {title: 'Time (ms)', type: 'number'},
-				relativeTime: {title: 'Relative speed', type: 'number'},
+				relativeTime: {title: 'Relative time', type: 'number'},
 				score: {title: 'Test score', type: 'number', format: 'percent'},
 				repeats: {title: 'Repeats', type: 'integer'}
 			},
@@ -113,13 +114,23 @@
 				return tv4.validateMultiple(data, schema).valid;
 			};
 		}));
+		
+		// z-schema
+		if (ZSchema) {
+			alternatives.push(new Validator('z-schema', function (schema) {
+				var validator = new ZSchema();
+				return function (data) {
+					return validator.validate(data, schema);
+				};
+			}));
+		}
 
 		if (oldApi) {
 			// Old version (for reference)
 			alternatives.push(new Validator('json-model@' + (oldApi._version || 'old') + ' (sanity check)', function (schema) {
 				var validator = oldApi.validator(schema);
 				return function (data) {
-					return validator(data).valid
+					return validator(data);
 				};
 			}));
 		}
