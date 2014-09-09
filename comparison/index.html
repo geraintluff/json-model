@@ -6,21 +6,31 @@
 			.debug {
 				display: none;
 			}
+			
 			#status {
 				font-weight: normal;
 				font-size: 16px;
 				text-align: center;
 				margin-bottom: 1em;
 			}
+			
+			#disclaimer {
+				text-align: center;
+				margin-top: 1em;
+				color: #666;
+				font-style: italic;
+			}
 		</style>
 	</head>
 	<body>
 		<pre id="status"></pre>
 		<div id="results"></div>
+		<div id="disclaimer">While the results for <code>tv4</code> and <code>json-model</code> are probably accurate, others may not be, as I don't know whether I'm using them in their most efficient way.</div>
 
 		<script src="../json-model.js"></script>
 		<script src="../bindings/default.js"></script>
 		<script src="http://geraintluff.github.io/tv4/tv4.js"></script>
+		<script src="https://raw.githubusercontent.com/zaggino/z-schema/master/dist/ZSchema-browser-min.js" type="application/javascript"></script>
 		<script src="comparison.js"></script>
 
 		<script>
@@ -33,7 +43,9 @@
 				JsonModel.open('./known-schemas.json', function (error, knownSchemas) {
 					if (error) throw error;
 
-					var model = comparison.runTests(tests.get(), knownSchemas.get(), function (error, results) {
+					var targetMs = 1000*2;
+					var maxRepeats = 10000;
+					var model = comparison.runTests(tests.get(), knownSchemas.get(), targetMs, maxRepeats, function (error, results) {
 						if (error) {
 							setStatus('error: ' + error.message);
 							throw error;

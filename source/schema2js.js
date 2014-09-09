@@ -1102,7 +1102,7 @@ Generator.prototype = {
 				}
 				var propertyExpr = valueExpr + '[key]';
 				for (var key in schema.patternProperties) {
-					var regExpCode = (new RegExp(key)).toString();
+					var regExpCode = '/' + key.replace(/\//g, '\\/') + '/';
 					var subSchema = this.getFullSchema(schema.patternProperties[key]);
 					var subUrl = (subSchema && subSchema.id) || this.extendUrl(schemaUrl, ['patternProperties', key]);
 					objectCode += indent('if (' + regExpCode + '.test(key)) {\n');
@@ -1153,7 +1153,7 @@ Generator.prototype = {
 				stringCode += '}\n';
 			}
 			if (schema.pattern) {
-				var regExpCode = (new RegExp(schema.pattern)).toString();
+				var regExpCode = '/' + (schema.pattern + "").replace(/\//g, '\\/') + '/';
 				stringCode += 'if (!' + regExpCode + '.test(' + valueExpr + ')) {\n';
 				stringCode += indent(errorFunc('{code: ' + JSON.stringify(ErrorCodes.STRING_PATTERN) + ', params: {pattern: ' + JSON.stringify(schema.pattern) + '}, path:' + dataPathExpr + ', schema: ' + schemaUrlExpr + '}', true));
 				stringCode += '}\n';
@@ -1251,7 +1251,12 @@ Generator.prototype = {
 		}
 		var code = this.code();
 		delete this._code;
-		var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
+		try {
+			var func = new Function('superclass', 'classes', 'request', 'return ' + code + '(superclass, classes, request)');
+		} catch (e) {
+			e.code = code;
+			throw e;
+		}
 		return this._classes = func(superclass, this._classes, request);
 	}
 };

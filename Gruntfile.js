@@ -95,15 +95,18 @@ module.exports = function (grunt) {
 		var oldApiPackageInfo = require('json-model/package.json');
 		oldApi.version = oldApiPackageInfo.version;
 
-		var metaSchema4 = require('./tests/draft-04-schema.json');
-
+		var metaSchema4 = JSON.parse(fs.readFileSync('./tests/draft-04-schema.json', {encoding: 'utf-8'}));
 		var knownSchemas = {};
 		knownSchemas[metaSchema4.id] = metaSchema4;
 
+		// Write files for browser version
 		fs.writeFileSync(__dirname + '/comparison/tests.json', JSON.stringify(tests, null, '\t'));
 		fs.writeFileSync(__dirname + '/comparison/known-schemas.json', JSON.stringify(knownSchemas, null, '\t'));
+
 		console.log(tests.length + ' tests');
-		comparison.runTests(tests, knownSchemas, function (error, results) {
+		var targetMs = 1000*20;
+		var maxRepeats = 10000;
+		comparison.runTests(tests, knownSchemas, targetMs, maxRepeats, function (error, results) {
 		
 			var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
 			readme.asyncReplace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end, callback) {
@@ -123,6 +126,6 @@ module.exports = function (grunt) {
 
 	// main cli commands
 	grunt.registerTask('default', ['test', 'compare', 'mdpages']);
-	grunt.registerTask('test', ['version', 'concat_sourcemap', 'uglify', 'mochaTest']);
+	grunt.registerTask('test', ['version', 'concat_sourcemap', 'mochaTest', 'uglify']);
 
 };

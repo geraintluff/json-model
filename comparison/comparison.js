@@ -78,16 +78,13 @@
 		}
 	});
 	
-	api.runTests = function (tests, knownSchemas, callback) {
+	api.runTests = function (tests, knownSchemas, targetMs, maxRepeats, callback) {
 		var resultsModel = JsonModel.create([], null, 'tmp://comparison');
 		
 		for (var key in knownSchemas) {
 			JsonModel.schemaStore.add(key, knownSchemas[key]);
 			if (oldApi) oldApi.schemaStore.add(key, knownSchemas[key]);
 		}
-
-		var targetMs = 1000*20;
-		var maxRepeats = 10000;
 		
 		var reference = new Validator('json-model@' + JsonModel.version + ' (precompiled)', function (schema) {
 			var validator = JsonModel.validator(schema);
