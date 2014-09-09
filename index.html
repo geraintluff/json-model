@@ -1,0 +1,351 @@
+<html><head><title>JSON Models</title><style>/**
+ * prism.js default theme for JavaScript, CSS and HTML
+ * Based on dabblet (http://dabblet.com)
+ * @author Lea Verou
+ */
+
+code[class*="language-"],
+pre[class*="language-"] {
+	color: black;
+	text-shadow: 0 1px white;
+	font-family: Consolas, Monaco, 'Andale Mono', monospace;
+	direction: ltr;
+	text-align: left;
+	white-space: pre;
+	word-spacing: normal;
+
+	-moz-tab-size: 4;
+	-o-tab-size: 4;
+	tab-size: 4;
+
+	-webkit-hyphens: none;
+	-moz-hyphens: none;
+	-ms-hyphens: none;
+	hyphens: none;
+}
+
+pre[class*="language-"]::-moz-selection, pre[class*="language-"] ::-moz-selection,
+code[class*="language-"]::-moz-selection, code[class*="language-"] ::-moz-selection {
+	text-shadow: none;
+	background: #b3d4fc;
+}
+
+pre[class*="language-"]::selection, pre[class*="language-"] ::selection,
+code[class*="language-"]::selection, code[class*="language-"] ::selection {
+	text-shadow: none;
+	background: #b3d4fc;
+}
+
+@media print {
+	code[class*="language-"],
+	pre[class*="language-"] {
+		text-shadow: none;
+	}
+}
+
+/* Code blocks */
+pre[class*="language-"] {
+	padding: 1em;
+	margin: .5em 0;
+	overflow: auto;
+}
+
+:not(pre) > code[class*="language-"],
+pre[class*="language-"] {
+	background: #f5f2f0;
+}
+
+/* Inline code */
+:not(pre) > code[class*="language-"] {
+	padding: .1em;
+	border-radius: .3em;
+}
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+	color: slategray;
+}
+
+.token.punctuation {
+	color: #999;
+}
+
+.namespace {
+	opacity: .7;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+	color: #905;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.builtin {
+	color: #690;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string,
+.token.variable {
+	color: #a67f59;
+	background: hsla(0,0%,100%,.5);
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+	color: #07a;
+}
+
+
+.token.regex,
+.token.important {
+	color: #e90;
+}
+
+.token.important {
+	font-weight: bold;
+}
+
+.token.entity {
+	cursor: help;
+}
+
+body {
+	background-color: #FCFBFA;
+	font-family: Arial, sans-serif;
+	font-size: 14px;
+	margin: 0;
+	padding: 0;
+}
+
+.nav {
+	margin: 0;
+	border-bottom: 1px solid black;
+	padding: 0.5em;
+	padding-top: 1.5em;
+	padding-bottom: 1.5em;
+	padding-left: 4em;
+	background-color: #FFF;
+	background-color: rgba(255, 255, 255, 0.8);
+	box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.content {
+	margin: 2em;
+}
+
+.section3, .section4 {
+	margin-left: 3em;
+}
+
+a[href] {
+	color: #06C;
+	text-decoration: none;
+}
+
+a[href]:hover {
+	color: #08F;
+	text-decoration: underline;
+}
+
+h1, h2, h3, h4, h5, h6 {
+	color: #008;
+}
+
+h1 {
+	font-size: 2em;
+	text-align: center;
+	margin-bottom: 1.5em;
+}
+
+h2 {
+	font-size: 1.5em;
+	margin-top: 1.5em;
+	border-bottom: 1px solid #888;
+}
+
+h3 {
+	font-size: 1.15em;
+}
+
+h4, h5, h6 {
+	font-size: 1em;
+}
+
+code {
+	position: relative;
+	top: -1px;
+	border: 1px solid #AAA;
+	background-color: #EEE;
+	color: #222;
+	padding-top: 0.2em;
+	padding-bottom: 0em;
+	padding-left: 0.3em;
+	padding-right: 0.3em;
+	margin: 0.2em;
+	margin-right: 0.1em;
+	border-radius: 3px;
+	box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.2);
+	font-size: 0.85em;
+	font-family: Consolas, monospace;
+}
+
+pre[class*="language-"] {
+	background: inherit;
+}
+
+pre code {
+	border-color: #888;
+	display: block;
+	padding: 0.3em;
+	margin: 0em;
+	border-radius: 5px;
+	width: 100%;
+	overflow: auto;
+}
+
+a[href] code {
+	color: #048;
+	background-color: #ECEEF1;
+	border-color: #68A;
+}</style></head><body><div class="content"><h1 id="json-models">JSON Models</h1><div class="section section1">
+<p>This package handles JSON data and associated JSON Schemas.  This includes <a href="#speed-table">fast schema validation/assignment</a>, and a wrapper class that adds events plus HTML bindings for UI/display (HTML on server-side, DOM in browser with shared code).</p>
+<h2 id="api">API</h2><div class="section section2">
+<p>On Node/CommonJS, use the <code>&#39;json-model&#39;</code> package:</p>
+<pre class="language-"javascript"><code class="lang-javascript"><span class="token keyword" >var</span> JsonModel <span class="token operator" >=</span> <span class="token function" >require<span class="token punctuation" >(</span></span><span class="token string" >'json-model'</span><span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+</code></pre>
+<p>In the browser, it registers itself as the <code>JsonModel</code> global object.</p>
+<h3 id="getting-a-validator">Getting a validator</h3><div class="section section3">
+<p>To get a validator for a given schema:</p>
+<pre class="language-"javascript"><code class="lang-javascript"><span class="token keyword" >var</span> validator <span class="token operator" >=</span> JsonModel<span class="token punctuation" >.</span><span class="token function" >validator<span class="token punctuation" >(</span></span>schema<span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+
+<span class="token keyword" >var</span> result <span class="token operator" >=</span> <span class="token function" >validator<span class="token punctuation" >(</span></span>data<span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+console<span class="token punctuation" >.</span><span class="token function" >log<span class="token punctuation" >(</span></span>result<span class="token punctuation" >.</span>valid<span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+console<span class="token punctuation" >.</span><span class="token function" >log<span class="token punctuation" >(</span></span>result<span class="token punctuation" >.</span>errors<span class="token punctuation" >)</span><span class="token punctuation" >;</span><span class="token comment" spellcheck="true"> // List of errors
+</span>console<span class="token punctuation" >.</span><span class="token function" >log<span class="token punctuation" >(</span></span>result<span class="token punctuation" >.</span>schemas<span class="token punctuation" >)</span><span class="token punctuation" >;</span><span class="token comment" spellcheck="true"> // Map from JSON Pointer paths --> schema URLs
+</span>console<span class="token punctuation" >.</span><span class="token function" >log<span class="token punctuation" >(</span></span>result<span class="token punctuation" >.</span>links<span class="token punctuation" >)</span><span class="token punctuation" >;</span><span class="token comment" spellcheck="true"> // Map: path --> links
+</span>console<span class="token punctuation" >.</span><span class="token function" >log<span class="token punctuation" >(</span></span>result<span class="token punctuation" >.</span>missing<span class="token punctuation" >)</span><span class="token punctuation" >;</span><span class="token comment" spellcheck="true"> // Map: path --> missing schemas
+</span></code></pre>
+<p>If some schemas need to be fetched, then the validator will not be completely functional at first.  You can supply a callback function to be notified when the validator is ready (which also supplies the same validator as a result):</p>
+<pre class="language-"javascript"><code class="lang-javascript">JsonModel<span class="token punctuation" >.</span><span class="token function" >validator<span class="token punctuation" >(</span></span>schema<span class="token punctuation" >,</span> <span class="token keyword" >function</span> <span class="token punctuation" >(</span>error<span class="token punctuation" >,</span> validator<span class="token punctuation" >)</span> <span class="token punctuation" >{</span>
+<span class="token punctuation" >}</span><span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+</code></pre>
+</div><h3 id="setting-the-request-function">Setting the request function</h3><div class="section section3">
+<p>This module has the ability to fetch schemas/data, but it needs you to supply an appropriate request function:</p>
+<pre class="language-"javascript"><code class="lang-javascript">JsonModel<span class="token punctuation" >.</span><span class="token function" >setRequestFunction<span class="token punctuation" >(</span></span><span class="token keyword" >function</span> <span class="token punctuation" >(</span>params<span class="token punctuation" >,</span> callback<span class="token punctuation" >)</span> <span class="token punctuation" >{</span>
+    <span class="token comment" spellcheck="true">/* do whatever */</span>
+    <span class="token function" >callback<span class="token punctuation" >(</span></span>error<span class="token punctuation" >,</span> jsonData<span class="token punctuation" >,</span> headers<span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+<span class="token punctuation" >}</span><span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+</code></pre>
+<p>The arguments to the callback are <code>error</code>, <code>jsonData</code> (the fetched data, JSON-decoded), and <code>headers</code> (an <em>object</em> representing the headers).  <code>headers</code> may be omitted (e.g. when loading from a file).  Non-JSON responses do not need to be supported.</p>
+</div><h3 id="creating-opening-data">Creating/opening data</h3><div class="section section3">
+<p>You can create a JsonModel wrapper directly:</p>
+<pre class="language-"javascript"><code class="lang-javascript"><span class="token keyword" >var</span> model <span class="token operator" >=</span> JsonModel<span class="token punctuation" >.</span><span class="token function" >create<span class="token punctuation" >(</span></span>jsonData<span class="token punctuation" >,</span> url<span class="token punctuation" >,</span> schemas<span class="token punctuation" >,</span> callback<span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+</code></pre>
+<p>Everything except the initial value (<code>jsonData</code>) is optional, but if you supply <code>schemas</code> you must supply <code>url</code> as well (although it may be <code>null</code>).  If <code>callback</code> is provided, it will be called (with two arguments <code>error</code> and <code>model</code>) after all relevant schemas have loaded.  The <code>model</code> argument will be the same as the return value of <code>create()</code>.</p>
+<p>You can also open remote data: (<code>hintSchemas</code> is an optional set of schemas to use if the remote resource doesn&#39;t supply its own)</p>
+<pre class="language-"javascript"><code class="lang-javascript">JsonModel<span class="token punctuation" >.</span><span class="token function" >open<span class="token punctuation" >(</span></span><span class="token string" >'http://example.com/json'</span><span class="token punctuation" >,</span> hintSchemas<span class="token punctuation" >,</span> <span class="token keyword" >function</span> <span class="token punctuation" >(</span>error<span class="token punctuation" >,</span> model<span class="token punctuation" >)</span> <span class="token punctuation" >{</span><span class="token punctuation" >.</span><span class="token punctuation" >.</span><span class="token punctuation" >.</span><span class="token punctuation" >}</span><span class="token punctuation" >)</span><span class="token punctuation" >;</span>
+</code></pre>
+<p>In both cases, the callback is only called when all the schemas have been loaded.</p>
+<p>The <code>schemas</code>/<code>hintSchemas</code> arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.</p>
+<!--
+
+### UI bindings
+
+The UI bindings are mostly HTML-based.
+
+#### In the browser
+
+```javascript
+model.bindTo(element);
+```
+
+Most bindings will output their interaces as HTML.  The supplied HTML is not dumped directly into the page, but is instead parsed into a DOM, and the existing document is coerced into that shape.
+
+#### On the server
+
+```javascript
+var html = model.html(tag, attrs);
+model.html(tag, attrs, function (error, html) {...});
+```
+
+`tag` and `attrs` are optional in both forms.  The HTML returned does not include the opening/closing tags itself, instead the HTML meant to sit between them.
+
+-->
+
+</div><h3 id="model-methods">Model methods</h3><div class="section section3">
+<p>The following methods are also available on wrapper objects:</p>
+<h4 id="events-and-inspection">Events and inspection</h4><div class="section section4">
+<ul>
+<li><code>model.on(event, callback)</code>, <code>model.off([event, [listener]]</code>, <code>model.once(event, callback)</code>, <code>model.emit(event, ...)</code> - event methods. <code>addListener()</code>/etc. variants are also present</li>
+<li><code>model.errors([pathSpec], [includeFetchErrors])</code> - returns current validation errors.  If the <code>includeFetchErrors</code> flag is set, then missing schemas (that encountered an error during fetching) are included as errors</li>
+<li><code>model.path([pathSpec])</code> - a child model</li>
+<li><code>model.pointer()</code> - the JSON Pointer of this model relative to the document root</li>
+</ul>
+</div><h4 id="generic-value-methods">Generic value methods</h4><div class="section section4">
+<ul>
+<li><code>model.jsonType()</code> - the current basic type of the data (null/boolean/string/number/object/array)</li>
+<li><code>model.get([pathSpec])</code> - gets the value from the model.</li>
+<li><code>model.set([pathSpec], value)</code> - gets the value from the model.</li>
+<li><code>model.getHtml([pathSpec])</code> - gets the value, HTML-encoded</li>
+<li><code>model.schemas([pathSpec])</code> - gets the schemas (URLs if known, or the schema itself for anonymous schemas)</li>
+<li><code>model.hasSchema(url)</code> - whether</li>
+</ul>
+</div><h4 id="array-methods">Array methods</h4><div class="section section4">
+<ul>
+<li><code>model.length()</code> - array length</li>
+<li><code>model.item(index)</code> - a child item</li>
+<li><code>model.items(callback)</code> - iterate over the child items (<code>function callback(itemModel, index) {...}</code>)</li>
+<li><code>model.map(callback)</code> - maps the array value to a new array</li>
+</ul>
+</div><h4 id="object-methods">Object methods</h4><div class="section section4">
+<ul>
+<li><code>model.keys()</code> - array length</li>
+<li><code>model.prop(key)</code> - a child property</li>
+<li><code>model.props(callback)</code> - iterate over the child properties (<code>function callback(propModel, key) {...}</code>)</li>
+<li><code>model.props(keys, callback)</code> - iterate over a particular set of child properties, in order</li>
+<li><code>model.mapProps(callback)</code> - maps the object value to a new object</li>
+<li><code>model.mapProps(keys, callback)</code> - maps the object value to an array (corresponding to a particular set of keys)</li>
+</ul>
+<p>For any method that takes an (optional) first <code>pathSpec</code> argument, this may either be a JSON Pointer (e.g. <code>&quot;/foo/bar&quot;</code>), or a property/index (e.g. <code>&quot;foo&quot;</code> or <code>5</code>).  If it is missing then the immediate value is returned.</p>
+</div></div><h3 id="other-utilities">Other utilities</h3><div class="section section3">
+<ul>
+<li><code>JsonModel.is(model)</code> - whether the supplied object is a JsonModel wrapper or not</li>
+<li><code>JsonModel.schemasFetched()</code> - whether all schemas have been fetched for the moment</li>
+<li><code>JsonModel.whenSchemasFetched(callback)</code> - callback is executed when all schemas have been fetched</li>
+<li><code>JsonModel.extend(newMethods)</code> - adds methods to the model prototype</li>
+</ul>
+</div></div><h2 id="fast-validation-assignment-when-re-using-schemas-">Fast validation/assignment (when re-using schemas)</h2><div class="section section2">
+<p>Schemas are compiled into validators (generating custom JS code), which has an up-front overhead but leads to much faster validation upon re-use.</p>
+<h3 id="speed-table">Speed table</h3><div class="section section3">
+<p>Here&#39;s a table of measured times for various validation setups (using the <a href="https://github.com/json-schema/JSON-Schema-Test-Suite">JSON Schema Test Suite</a>) on Node:</p>
+<!--SPEEDSTART-->
+<table width="100%"><tr class="json-array-header"><th>Setup</th><th>Time (ms)</th><th>Relative speed</th><th>Test score</th><th>Repeats</th></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@0.2.24 (precompiled)</span></td><td class="json-array-item-key">0.4</td><td class="json-array-item-key">1</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">9034</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@0.2.24 (compile and validate)</span></td><td class="json-array-item-key">58.1</td><td class="json-array-item-key">141.5</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">64</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>tv4 (validateResult)</span></td><td class="json-array-item-key">27.4</td><td class="json-array-item-key">66.6</td><td class="json-array-item-key">94.7%</td><td class="json-array-item-key">136</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>tv4 (validateMultiple)</span></td><td class="json-array-item-key">29</td><td class="json-array-item-key">70.6</td><td class="json-array-item-key">94.7%</td><td class="json-array-item-key">128</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@old (sanity check)</span></td><td class="json-array-item-key">0.4</td><td class="json-array-item-key">1</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">9165</td></tr></table>
+<!--SPEEDEND-->
+
+<p>As you can see, the first time you compile a validator it is definitely slower than <a href="https://www.npmjs.org/package/tv4">tv4</a>.  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you&#39;re going to be validating against the same schema multiple times, then this will probably end up faster.</p>
+</div></div><h2 id="schema-assignment">Schema assignment</h2><div class="section section2">
+<p>The result object you get back from a validator includes a <code>schema</code> property, which is a map from JSON Pointer paths to schema URIs:</p>
+<pre class="language-"json"><code class="lang-json"><span class="token punctuation" >{</span>
+    <span class="token string" >"valid"</span><span class="token punctuation" >:</span> <span class="token boolean" >true</span><span class="token punctuation" >,</span>
+    <span class="token string" >"errors"</span><span class="token punctuation" >:</span> <span class="token punctuation" >[</span><span class="token punctuation" >]</span><span class="token punctuation" >,</span>
+    <span class="token string" >"schemas"</span><span class="token punctuation" >:</span> <span class="token punctuation" >{</span>
+        <span class="token string" >""</span><span class="token punctuation" >:</span> <span class="token punctuation" >[</span><span class="token string" >"http://example.com/schema"</span><span class="token punctuation" >]</span><span class="token punctuation" >,</span>
+        <span class="token string" >"/foo"</span><span class="token punctuation" >:</span> <span class="token punctuation" >[</span><span class="token string" >"http://example.com/schema#/properties/foo"</span><span class="token punctuation" >]</span><span class="token punctuation" >,</span>
+        <span class="token string" >"/foo/0"</span><span class="token punctuation" >:</span> <span class="token punctuation" >[</span><span class="token string" >"http://example.com/schema#/definitions/fooItems"</span><span class="token punctuation" >]</span>
+    <span class="token punctuation" >}</span>
+<span class="token punctuation" >}</span>
+</code></pre>
+</div></div></div><script></script></body></html>

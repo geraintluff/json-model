@@ -1,0 +1,50 @@
+<html>
+	<head>
+		<title>JsonModel: speed comparison</title>
+		<link rel="stylesheet" href="../bindings/default.css" />
+		<style>
+			.debug {
+				display: none;
+			}
+			#status {
+				font-weight: normal;
+				font-size: 16px;
+				text-align: center;
+				margin-bottom: 1em;
+			}
+		</style>
+	</head>
+	<body>
+		<pre id="status"></pre>
+		<div id="results"></div>
+
+		<script src="../json-model.js"></script>
+		<script src="../bindings/default.js"></script>
+		<script src="http://geraintluff.github.io/tv4/tv4.js"></script>
+		<script src="comparison.js"></script>
+
+		<script>
+			function setStatus (message) {
+				document.getElementById('status').innerHTML = (message + "").escapeHtml();
+			}
+			setStatus('working...');
+			JsonModel.open('./tests.json', function (error, tests) {
+				if (error) throw error;
+				JsonModel.open('./known-schemas.json', function (error, knownSchemas) {
+					if (error) throw error;
+
+					var model = comparison.runTests(tests.get(), knownSchemas.get(), function (error, results) {
+						if (error) {
+							setStatus('error: ' + error.message);
+							throw error;
+						}
+						setStatus('done');
+					});
+					window.model = model;
+		
+					JsonModel.context.bind(model, 'results');
+				});
+			});
+		</script>
+	</body>
+</html>

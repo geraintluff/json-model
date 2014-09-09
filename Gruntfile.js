@@ -1,6 +1,8 @@
 module.exports = function (grunt) {
 
 	grunt.loadNpmTasks('grunt-mocha-test');
+	grunt.loadNpmTasks('grunt-concat-sourcemap');
+	grunt.loadNpmTasks('grunt-contrib-uglify');
 
 	grunt.initConfig({
 		mochaTest: {
@@ -11,53 +13,58 @@ module.exports = function (grunt) {
 					bail: false
 				}
 			}
+		},
+		concat_sourcemap: {
+			options: {
+				separator: '\n'
+			},
+			source: {
+				expand: true,
+				cwd: 'source',
+				rename: function (dest, src) {
+					return dest;
+				},
+				src: [
+					'__header.js',
+					'schema2js.js',
+					'model.js',
+					'model-bind.js',
+					'__footer.js'
+				],
+				dest: 'json-model.js'
+			}
+		},
+		uglify: {
+			main: {
+				options: {
+					report: 'min',
+					sourceMapIn: 'json-model.js.map',
+					sourceMap: 'json-model.min.js.map'
+				},
+				files: {
+					'json-model.min.js': ['json-model.js']
+				}
+			}
 		}
 	});
 	
-	grunt.registerTask('compare', function () {
+	grunt.registerTask('mdpages', function () {
+		var mdpages = require('mdpages'), fs = require('fs');
+		var markdown = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
+		var html = mdpages.convertString(markdown);
+		fs.writeFileSync(__dirname + '/index.html', html);
+	});
+	
+	grunt.registerTask('version', function () {
+		var fs = require('fs');
 		var packageInfo = require('./package.json');
+		var header = fs.readFileSync('./source/__header.js', {encoding: 'utf-8'});
+		header = header.replace(/\/\*VERSION\*\/.*?\/\*\/VERSION\*\//, '/*VERSION*/' + JSON.stringify(packageInfo.version) + '/*/VERSION*/');
+		fs.writeFileSync('./source/__header.js', header);
+	})
 	
+	grunt.registerTask('compare', function () {
 		var fs = require('fs'), path = require('path');
-	
-		function Validator(name, validatorGenerator) {
-			this.name = name;
-			this.validatorGenerator = validatorGenerator;
-		}
-		Validator.prototype = {
-			runTests: function (tests, targetMs, maxRepeats) {
-				var thisValidator = this;
-				var testSetups = tests.map(function (test) {
-					return {
-						validator: thisValidator.validatorGenerator(test.schema),
-						test: test
-					};
-				});
-				var start = Date.now();
-				var end = start + targetMs;
-				var correct = 0, total = 0;
-				var repeats = 0;
-				while (Date.now() < end && !(repeats >= maxRepeats)) {
-					repeats++;
-					testSetups.forEach(function (testSetup) {
-						var validator = testSetup.validator;
-						var data = testSetup.test.data;
-						var shouldBeValid = testSetup.test.valid;
-
-						var valid = validator(data);
-						if (valid === shouldBeValid) {
-							correct++;
-						}
-						total++;
-					});
-				}
-				return {
-					repeats: repeats,
-					name: this.name,
-					ms: (Date.now() - start)/repeats,
-					score: correct/total*100
-				};
-			}
-		};
 
 		var tests = [];
 		var testFiles = ['type.json', 'properties.json', 'additionalProperties.json', 'required.json', 'maxProperties.json', 'minProperties.json', 'items.json', 'additionalItems.json', 'maxItems.json', 'minItems.json', 'pattern.json', 'maxLength.json', 'minLength.json', 'minimum.json', 'maximum.json', 'dependencies.json', 'allOf.json', 'anyOf.json', 'oneOf.json', 'ref.json'];
@@ -72,116 +79,50 @@ module.exports = function (grunt) {
 				}));
 			}
 		});
-		console.log(tests.length + ' tests');
+		
 
 		/*******/
 
-		var targetMs = 1000*20;
-		var maxRepeats = 10000;
-		
-		var jsonModel = require('./');
-		jsonModel.schemaStore.add(require('./tests/draft-04-schema.json'));
-		var reference = new Validator('json-model@' + packageInfo.version + ' (precompiled)', function (schema) {
-			var validator = jsonModel.validator(schema);
-			return function (data) {
-				return validator(data).valid
-			};
-		});
-		
-		var alternatives = [];
-		// Include compilation (to measure compilation time)
-		alternatives.push(new Validator('json-model@' + packageInfo.version + ' (compile and validate)', function (schema) {
-			return function (data) {
-				var validator = jsonModel.validator(schema);
-				return validator(data).valid;
-			};
-		}));
-		// tv4
-		alternatives.push(new Validator('tv4 (validateResult)', function (schema) {
-			var tv4 = require('tv4');
-			return function (data) {
-				return tv4.validateResult(data, schema).valid;
-			};
-		}));
-		alternatives.push(new Validator('tv4 (validateMultiple)', function (schema) {
-			var tv4 = require('tv4');
-			return function (data) {
-				return tv4.validateMultiple(data, schema).valid;
-			};
-		}));
-		// Old version (for reference)
+		var done = this.async();
+
+		var comparison = require('./comparison/comparison.js');
+
+		var JsonModel = require('./');
+		JsonModel.bindings.includeDir('./bindings');
+		var packageInfo = require('./package.json');
+		JsonModel.version = packageInfo.version;
 		var oldApi = require('json-model');
-		oldApi.schemaStore.add(require('./tests/draft-04-schema.json'));
 		var oldApiPackageInfo = require('json-model/package.json');
-		alternatives.push(new Validator('json-model@' + oldApiPackageInfo.version + ' (sanity check)', function (schema) {
-			var validator = oldApi.validator(schema);
-			return function (data) {
-				return validator(data).valid
-			};
-		}));
+		oldApi.version = oldApiPackageInfo.version;
+
+		var metaSchema4 = require('./tests/draft-04-schema.json');
+
+		var knownSchemas = {};
+		knownSchemas[metaSchema4.id] = metaSchema4;
+
+		fs.writeFileSync(__dirname + '/comparison/tests.json', JSON.stringify(tests, null, '\t'));
+		fs.writeFileSync(__dirname + '/comparison/known-schemas.json', JSON.stringify(knownSchemas, null, '\t'));
+		console.log(tests.length + ' tests');
+		comparison.runTests(tests, knownSchemas, function (error, results) {
 		
-		var referenceResult = reference.runTests(tests, targetMs, maxRepeats);
-		var targetMs = Math.round(referenceResult.ms*referenceResult.repeats);
-		console.log(referenceResult);
-		console.log('-------- target ms: ' + targetMs + ' --------');
-		var results = alternatives.map(function (validator) {
-			var result = validator.runTests(tests, targetMs, maxRepeats);
-			console.log(result);
-			return result;
-		});
-		
-		// Order might matter - try again at the end, and take the worse of the two
-		var secondReferenceResult = reference.runTests(tests, targetMs, maxRepeats);
-		if (secondReferenceResult.ms > referenceResult.ms) {
-			referenceResult = secondReferenceResult;
-		}
-		referenceResult.relativeTime = 1;
-		results.forEach(function (result) {
-			result.relativeTime = result.ms/referenceResult.ms;
-		});
-		
-		jsonModel.bindings.includeDir('./bindings');
-		jsonModel.schemaStore.add('tmp://comparison', {
-			type: 'array',
-			items: {
-				type: 'object',
-				properties: {
-					name: {title: 'Setup', type: 'string'},
-					ms: {title: 'Time (ms)', type: 'number'},
-					relativeTime: {title: 'Relative speed', type: 'number'},
-					score: {title: 'Test score', type: 'number', format: 'percent'},
-					repeats: {title: 'Repeats', type: 'integer'}
-				},
-				propertyOrder: ['name', 'ms', 'relativeTime', 'score', 'repeats']
-			}
-		});
-		jsonModel.bindings.add({
-			canBind: {type: 'number'},
-			html: function (model) {
-				var value = Math.round(model.get()*10)/10;
-				if (model.hasSchema('tmp://comparison#/items/properties/score')) {
-					value += '%';
-				}
-				return value;
-			}
-		});
-		
-		var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
-		readme.asyncReplace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end, callback) {
-			var model = jsonModel.create([referenceResult].concat(results), null, 'tmp://comparison');
-			var context = jsonModel.context;
-			var html = model.html('table', {width: '100%'});
-			context.expandHtml(html, function (error, html) {
-				callback(error, start + '\n' + html  + '\n' + end);
+			var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
+			readme.asyncReplace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end, callback) {
+				var model = JsonModel.create(results, null, 'tmp://comparison');
+				var context = JsonModel.context;
+				var html = model.html('table', {width: '100%'});
+				context.expandHtml(html, function (error, html) {
+					callback(error, start + '\n' + html  + '\n' + end);
+				});
+			}, function (error, readme) {
+				if (error) throw error;
+				fs.writeFileSync(__dirname + '/README.md', readme);
+				done();
 			});
-		}, function (error, readme) {
-			if (error) throw error;
-			fs.writeFileSync(__dirname + '/README.md', readme);
 		});
 	});
 
 	// main cli commands
-	grunt.registerTask('default', ['test', 'compare']);
-	grunt.registerTask('test', ['mochaTest']);
+	grunt.registerTask('default', ['test', 'compare', 'mdpages']);
+	grunt.registerTask('test', ['version', 'concat_sourcemap', 'uglify', 'mochaTest']);
 
 };
