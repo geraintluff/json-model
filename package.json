@@ -32,6 +32,7 @@
     "tv4": "~1.1.0",
     "mdpages": "0.0.1",
     "grunt-contrib-uglify": "~0.5.1",
-    "z-schema": "~3.0.0"
+    "z-schema": "~3.0.0",
+    "jjv": "~1.0.2"
   }
 }

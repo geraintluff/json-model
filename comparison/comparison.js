@@ -2,12 +2,12 @@
 (function (global, factory) {
 	if (typeof module !== 'undefined' && module.exports){
 		// CommonJS. Define export.
-		module.exports = factory(require('../'), require('json-model'), require('tv4'), require('z-schema'));
+		module.exports = factory(require('../'), require('json-model'), require('tv4'), require('z-schema'), require('jjv'));
 	} else {
 		// Browser globals
-		global.comparison = factory(global.JsonModel, null, global.tv4, global.ZSchema);
+		global.comparison = factory(global.JsonModel, null, global.tv4, global.ZSchema, global.jjv);
 	}
-})(this, function (JsonModel, oldApi, tv4, ZSchema) {
+})(this, function (JsonModel, oldApi, tv4, ZSchema, jjv) {
 	var api = {};
 
 	var Validator = api.Validator = function Validator(name, validatorGenerator) {
@@ -125,6 +125,17 @@
 			}));
 		}
 
+		// JJV
+		if (jjv) {
+			alternatives.push(new Validator('jjv', function (schema) {
+				var env = jjv();
+				env.addSchema('test', schema);
+				return function (data) {
+					return !env.validate('test', data);
+				};
+			}));
+		}
+
 		if (oldApi) {
 			// Old version (for reference)
 			alternatives.push(new Validator('json-model@' + (oldApi._version || 'old') + ' (sanity check)', function (schema) {
@@ -142,9 +153,6 @@
 			
 			resultsModel.set([referenceResult]);
 
-			console.log(referenceResult);
-			console.log('-------- target ms: ' + targetMs + ' --------');
-			
 			setTimeout(nextTest, 500);
 		}
 		
