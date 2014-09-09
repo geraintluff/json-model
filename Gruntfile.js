@@ -139,7 +139,8 @@ module.exports = function (grunt) {
 		results.forEach(function (result) {
 			result.relativeTime = result.ms/referenceResult.ms;
 		});
-
+		
+		jsonModel.bindings.includeDir('./bindings');
 		jsonModel.schemaStore.add('tmp://comparison', {
 			type: 'array',
 			items: {
@@ -148,34 +149,10 @@ module.exports = function (grunt) {
 					name: {title: 'Setup', type: 'string'},
 					ms: {title: 'Time (ms)', type: 'number'},
 					relativeTime: {title: 'Relative speed', type: 'number'},
-					score: {title: 'Test pass rate', type: 'number', format: 'percent'}
+					score: {title: 'Test score', type: 'number', format: 'percent'},
+					repeats: {title: 'Repeats', type: 'integer'}
 				},
-				propertyOrder: ['name', 'time', 'relativeTime', 'score', 'repeats']
-			}
-		});
-		jsonModel.bindings.add({
-			canBind: {
-				tag: 'table',
-				schema: 'tmp://comparison'
-			},
-			html: function (model) {
-				var html = '<tr>' + ['Setup', 'Time (ms)', 'Relative time', 'Test score', 'Repeats'].map(function (title) {
-					return '<th style="background-color: #DDD;">' + title.escapeHtml() + '</th>';
-				}).join('') + '</tr>';
-				return html + model.map(function (item) {
-					return item.html('tr');
-				}).join('');
-			}
-		});
-		jsonModel.bindings.add({
-			canBind: {
-				tag: 'tr',
-				schema: 'tmp://comparison#/items'
-			},
-			html: function (model) {
-				return model.mapProps(['name', 'ms', 'relativeTime', 'score', 'repeats'], function (prop) {
-					return prop.html('td');
-				}).join('');
+				propertyOrder: ['name', 'ms', 'relativeTime', 'score', 'repeats']
 			}
 		});
 		jsonModel.bindings.add({
@@ -192,7 +169,7 @@ module.exports = function (grunt) {
 		var readme = fs.readFileSync(__dirname + '/README.md', {encoding: 'utf-8'});
 		readme.asyncReplace(/(<!--SPEEDSTART-->)([^]*)(<!--SPEEDEND-->)/g, function (match, start, middle, end, callback) {
 			var model = jsonModel.create([referenceResult].concat(results), null, 'tmp://comparison');
-			var context = jsonModel.bindings.context();
+			var context = jsonModel.context;
 			var html = model.html('table', {width: '100%'});
 			context.expandHtml(html, function (error, html) {
 				callback(error, start + '\n' + html  + '\n' + end);

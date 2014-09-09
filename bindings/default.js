@@ -68,4 +68,44 @@
 			return html;
 		}
 	});
-})(JsonModel, bindings);
+
+	bindings.add({
+		priority: -1,
+		canBind: {type: 'array', tag: 'table'},
+		html: function (model, tag, attrs, context) {
+			var schemaSet = model.schemaSet().item();
+			var keys = schemaSet.knownKeys();
+
+			// Get extra keys
+			// TODO: only do this if additionalProperties/patternProperties set?
+			var properties = {};
+			keys.forEach(function (key) {
+				properties[key] = true;
+			})
+			model.items(function (item) {
+				item.keys().forEach(function (key) {
+					if (!properties[key]) {
+						properties[key] = true;
+						keys.push(key);
+					}
+				});
+			});
+
+			var header = '<tr class="json-array-header">';
+			keys.forEach(function (key) {
+				var title = schemaSet.prop(key).titles()[0] || key;
+				header += '<th>' + title.escapeHtml() + '</th>';
+			});
+			header += '</tr>';
+			
+			return header + model.map(function (item, index) {
+				var html = '<tr class="json-array-item">';
+				html += item.mapProps(keys, function (prop, key, index) {
+					return prop.html('td.json-array-item-key');
+				}).join('');
+				return html + '</tr>';
+			}).join('');
+		}
+	});
+
+})(JsonModel, JsonModel.bindings);

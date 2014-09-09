@@ -302,6 +302,99 @@
 		}
 	};
 	
+	function SchemaSet(schemas) {
+		// TODO: expandAllOf flag
+		this._schemas = schemas;
+		this._props = {};
+		this._patterns = {};
+	}
+	SchemaSet.prototype = {
+		_cache: function (method, result) {
+			this[method] = function () {
+				return result;
+			};
+			return result;
+		},
+		_cacheArray: function (method, result) {
+			this[method] = function () {
+				return result.slice(0);
+			};
+			return result.slice(0);
+		},
+		titles: function () {
+			return this._cacheArray('titles', this._schemas.map(function (schema) {
+				return schema.title;
+			}));
+		},
+		knownKeys: function (key) {
+			var keys = [], props = {};
+			function addKey(key) {
+				if (!props[key]) {
+					props[key] = true;
+					keys.push(key);
+				}
+			}
+			this._schemas.forEach(function (schema) {
+				(schema.propertyOrder || []).forEach(addKey);
+				(schema.required || []).forEach(addKey);
+				for (var key in schema.properties || {}) {
+					addKey(key);
+				}
+			});
+			return keys;
+		},
+		prop: function (key) {
+			if (this._props[key]) return this._props[key];
+			
+			var newSchemas = [];
+			for (var i = 0; i < this._schemas.length; i++) {
+				var schema = this._schemas[i];
+				var found = false;
+				if (schema.properties && schema.properties[key]) {
+					newSchemas.push(schema.properties[key]);
+					found = true;
+				}
+				if (schema.patternProperties) {
+					for (var pattern in patternProperties) {
+						var regexp = this._patterns[pattern] = this._patterns[pattern] || new RegExp(pattern);
+						if (regexp.test(key)) {
+							newSchemas.push(schema.patternProperties[pattern]);
+							found = true;
+						}
+					}
+				}
+				if (!found && 'additionalProperties' in schema) {
+					if (!schema.additionalProperties) {
+						newSchemas = [false];
+						break;
+					}
+				}
+			}
+			return this._props[key] = new SchemaSet(newSchemas);
+		},
+		item: function (index) {
+			var newSchemas = [], individual = false;
+			
+			for (var i = 0; i < this._schemas.length; i++) {
+				var schema = this._schemas[i];
+				if (schema.items) {
+					if (Array.isArray(schema.items)) {
+						individual = true;
+						throw new Error('array tuples not supported yet');
+					} else {
+						newSchemas.push(schema.items);
+					}
+				}
+			}
+			
+			if (!individual) {
+				return this._cache('item', new SchemaSet(newSchemas));
+			} else {
+				throw new Error('Array tuples not supported yet');
+			}
+		}
+	};
+	
 	function resolvePointer(path, valueTarget) {
 		var pathParts = path.split('/').slice(1).map(pointerUnescape);
 		var finalKey = pathParts.pop();
@@ -316,7 +409,7 @@
 		}
 		return {target: valueTarget, key: finalKey};
 	}
-
+	
 	function RootModel(dataStore, storeKey) {
 		var thisRootModel = this;
 		this.dataStore = dataStore;
@@ -366,6 +459,7 @@
 		var value = null;
 		var validatorFunctions = [];
 		var schemaMap = {};
+		var schemaSetCache = {};
 		var linkMap = {};
 		var missingSchemas = {};
 		var errors = [];
@@ -493,6 +587,7 @@
 				pendingSchemaRecalculate = true;
 				// We un-shift (instead of using whenReady) to make sure it executes first, before any other callbacks
 				whenReadyCallbacks.unshift(function () {
+					schemaSetCache = {};
 					pendingSchemaRecalculate = false;
 					var oldSchemaMap = schemaMap;
 					recalculateSchemas();
@@ -515,6 +610,19 @@
 		};
 		this.getPathSchemas = function (path) {
 			return (schemaMap[path] || []).slice(0);
+		};
+		this.getPathSchemaSet = function (path) {
+			var schemas = schemaMap[path] || [];
+			var key = schemas.join('\n');
+			var allStrings = schemas.every(function (schema) {
+				return typeof schema === 'string';
+			});
+			if (allStrings) {
+				return schemaSetCache[key] = schemaSetCache[key] || new SchemaSet(schemas.map(function (schema) {
+					return schemaStore.get(schema);
+				}));
+			}
+			throw new Error('Non-string schemas not supported yet');
 		};
 		this.getPathLinks = function (path, filter) {
 			var thisRootModel = this;
@@ -713,6 +821,9 @@
 		},
 		schemas: function (pathSpec) {
 			return this._root.getPathSchemas(this._path + normPathSpec(pathSpec));
+		},
+		schemaSet: function (pathSpec) {
+			return this._root.getPathSchemaSet(this._path + normPathSpec(pathSpec));
 		},
 		links: function (filter) {
 			return this._root.getPathLinks(this._path, filter);

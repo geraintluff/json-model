@@ -680,12 +680,12 @@
 			var context = this;
 			var immediateHtml = binding.html(model, tag, attrs, this, function (error, html) {
 				if (error) return callback(error, html);
-				if (typeof immediateHtml === 'string') {
+				if (typeof immediateHtml !== 'undefined') {
 					throw new Error('Renderer must either return HTML string or call the callback, but not both');
 				}
 				context.expandHtml(html, callback);
 			});
-			if (typeof immediateHtml === 'string') {
+			if (typeof immediateHtml !== 'undefined') {
 				context.expandHtml(immediateHtml, callback);
 			}
 		},
@@ -698,7 +698,7 @@
 				var binding = thisContext.selectBinding(model, tag, attrs);
 				var context = thisContext._subContext(model, binding, uiPath);
 				context._renderInnerHtml(model, binding, tag, attrs, function (error, html) {
-					if (typeof html === 'string') {
+					if (typeof html !== 'undefined') {
 						html = htmlTag(tag, attrs, html)
 					}
 					callback(error, html);
@@ -712,11 +712,12 @@
 		},
 		expandHtml: function (html, callback) {
 			var thisContext = this;
+			if (typeof html !== 'string') html += "";
 			html.asyncReplace(magicRegex, function (match, data, callback) {
 				try {
 					data = JSON.parse(data);
 				} catch (e) {
-					console.log(data, html);
+					console.error(data, html);
 					return callback(e);
 				}
 				data.tag = data.tag || 'span';
@@ -748,12 +749,12 @@
 			element.pendingDomUpdate = true;
 			var oldRootState = model._root.state;
 			var innerHtml = binding.html(model, tag, attrs, this, processHtml);
-			if (typeof innerHtml === 'string') {
+			if (typeof innerHtml !== 'undefined') {
 				processHtml(null, innerHtml);
 			}
 
 			function processHtml(error, innerHtml) {
-				var replacedHtml = innerHtml.replace(magicRegex, function (match, data) {
+				var replacedHtml = (innerHtml + "").replace(magicRegex, function (match, data) {
 					try {
 						data = JSON.parse(data);
 					} catch (e) {
@@ -800,7 +801,7 @@
 							console.log('Re-rendering');
 							return thisContext._updateDom(element, tag, attrs, callback);
 						});
-						if (typeof newHtml === 'string') {
+						if (typeof newHtml !== 'undefined') {
 							if (newHtml === innerHtml) {
 								return callback(error || err);
 							}

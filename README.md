@@ -23,8 +23,8 @@ var result = validator(data);
 console.log(result.valid);
 console.log(result.errors); // List of errors
 console.log(result.schemas); // Map from JSON Pointer paths --> schema URLs
-console.log(result.links); // Map --> links
-console.log(result.missing); // Map --> missing schemas
+console.log(result.links); // Map: path --> links
+console.log(result.missing); // Map: path --> missing schemas
 ```
 
 If some schemas need to be fetched, then the validator will not be completely functional at first.  You can supply a callback function to be notified when the validator is ready (which also supplies the same validator as a result):
@@ -67,6 +67,8 @@ In both cases, the callback is only called when all the schemas have been loaded
 
 The `schemas`/`hintSchemas` arguments can be strings (URIs), objects (anonymous schemas), or arrays of strings/objects.
 
+<!--
+
 ### UI bindings
 
 The UI bindings are mostly HTML-based.
@@ -87,6 +89,8 @@ model.html(tag, attrs, function (error, html) {...});
 ```
 
 `tag` and `attrs` are optional in both forms.  The HTML returned does not include the opening/closing tags itself, instead the HTML meant to sit between them.
+
+-->
 
 ### Model methods
 
@@ -139,7 +143,7 @@ Schemas are compiled into validators (generating custom JS code), which has an u
 Here's a table of measured times for various validation setups (using the [JSON Schema Test Suite](https://github.com/json-schema/JSON-Schema-Test-Suite)) on Node:
 
 <!--SPEEDSTART-->
-<table width="100%"><tr><th style="background-color: #DDD;">Setup</th><th style="background-color: #DDD;">Time (ms)</th><th style="background-color: #DDD;">Relative time</th><th style="background-color: #DDD;">Test score</th><th style="background-color: #DDD;">Repeats</th></tr><tr><td>json-model@0.2.6 (precompiled)</td><td>0.4</td><td>1</td><td>100%</td><td>5297</td></tr><tr><td>json-model@0.2.6 (compile and validate)</td><td>51.3</td><td>135.8</td><td>100%</td><td>39</td></tr><tr><td>tv4 (validateResult)</td><td>28.6</td><td>75.8</td><td>94.7%</td><td>70</td></tr><tr><td>tv4 (validateMultiple)</td><td>27.7</td><td>73.3</td><td>94.7%</td><td>73</td></tr><tr><td>json-model@0.2.0 (sanity check)</td><td>0.4</td><td>1</td><td>100%</td><td>5184</td></tr></table>
+<table width="100%"><tr class="json-array-header"><th>Setup</th><th>Time (ms)</th><th>Relative speed</th><th>Test score</th><th>Repeats</th></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@0.2.23 (precompiled)</span></td><td class="json-array-item-key">0.4</td><td class="json-array-item-key">1</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">9808</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@0.2.23 (compile and validate)</span></td><td class="json-array-item-key">52.9</td><td class="json-array-item-key">141</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">70</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>tv4 (validateResult)</span></td><td class="json-array-item-key">27.1</td><td class="json-array-item-key">72.3</td><td class="json-array-item-key">94.7%</td><td class="json-array-item-key">136</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>tv4 (validateMultiple)</span></td><td class="json-array-item-key">32.9</td><td class="json-array-item-key">87.6</td><td class="json-array-item-key">94.7%</td><td class="json-array-item-key">112</td></tr><tr class="json-array-item"><td class="json-array-item-key"><span>json-model@0.2.0 (sanity check)</span></td><td class="json-array-item-key">0.4</td><td class="json-array-item-key">1.1</td><td class="json-array-item-key">100%</td><td class="json-array-item-key">9207</td></tr></table>
 <!--SPEEDEND-->
 
 As you can see, the first time you compile a validator it is definitely slower than [tv4](https://www.npmjs.org/package/tv4).  However, if you re-use that compiled validator then it is faster than tv4 by an order of magnitude.  If you're going to be validating against the same schema multiple times, then this will probably end up faster.

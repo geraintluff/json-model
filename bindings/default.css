@@ -62,6 +62,14 @@
 	margin-bottom: 1em;
 }
 
+tr.json-array-item {
+	border: none;
+}
+
+.json-array-header th {
+	border-bottom: 1px solid #CCC;
+}
+
 .json-number, .json-boolean, .json-null {
 	color: #808;
 	font-family: monospace;
